@@ -21,7 +21,9 @@ void check(const bool condition, const std::string_view message) {
 
 MovementState run(const MovementSimulator& simulator, MovementState state,
                   const MovementInput& input, const int ticks) {
-    for (int i = 0; i < ticks; ++i) (void)simulator.step(state, input);
+    for (int i = 0; i < ticks; ++i) {
+        (void)simulator.step(state, input);
+    }
     return state;
 }
 
@@ -64,7 +66,10 @@ void test_reversal_crosses_zero_consistently() {
     bool crossed = false;
     for (int i = 0; i < 100; ++i) {
         (void)simulator.step(state, {.forward = -1.0});
-        if (state.velocity.y < 0.0) { crossed = true; break; }
+        if (state.velocity.y < 0.0) {
+            crossed = true;
+            break;
+        }
     }
     check(crossed, "sustained reverse input transitions through zero velocity");
 }
@@ -78,6 +83,26 @@ void test_ground_speed_cap_after_direction_change() {
                                    result.velocity.y * result.velocity.y);
     check(speed <= simulator.config().ground_max_speed + 1.0e-8,
           "ground speed remains capped during direction changes");
+}
+
+void test_crouch_does_not_erase_existing_momentum() {
+    const MovementSimulator simulator;
+    MovementState state;
+    state.velocity.y = simulator.config().ground_max_speed;
+    (void)simulator.step(state, {.forward = 1.0, .crouch_held = true});
+    check(state.velocity.y < simulator.config().ground_max_speed &&
+          state.velocity.y > simulator.config().ground_max_speed - 0.5,
+          "crouching brakes existing momentum gradually rather than clipping it");
+}
+
+void test_crouched_acceleration_uses_lower_target_speed() {
+    const MovementSimulator simulator;
+    MovementState state;
+    state = run(simulator, state, {.crouch_held = true}, 128);
+    state = run(simulator, state, {.forward = 1.0, .crouch_held = true}, 128);
+    check(state.velocity.y <= simulator.config().ground_max_speed *
+          simulator.config().crouch_speed_multiplier + 1.0e-8,
+          "crouched acceleration respects its lower target speed");
 }
 
 void test_jump_is_reported_once() {
@@ -134,14 +159,14 @@ void test_replay_is_repeatable_with_same_build() {
           "identical input stream produces identical state in the same build");
 }
 
-void test_invalid_configuration_rejected() {
+void test_invalid_state_rejected() {
     bool threw = false;
     try {
-        MovementConfig config;
-        config.fixed_dt = 0.0;
-        (void)MovementSimulator{config};
+        MovementState state;
+        state.crouch_fraction = 1.5;
+        (void)MovementSimulator{}.step(state, {});
     } catch (const std::invalid_argument&) { threw = true; }
-    check(threw, "invalid movement configuration is rejected");
+    check(threw, "invalid simulation state is rejected");
 }
 
 void test_invalid_input_rejected() {
@@ -149,8 +174,22 @@ void test_invalid_input_rejected() {
     try {
         MovementState state;
         (void)MovementSimulator{}.step(state, {.forward = std::numeric_limits<double>::quiet_NaN()});
-    } catch (const std::invalid_argument&) { threw = true; }
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
     check(threw, "non-finite movement input is rejected");
+}
+
+void test_invalid_configuration_rejected() {
+    bool threw = false;
+    try {
+        MovementConfig config;
+        config.fixed_dt = 0.0;
+        (void)MovementSimulator{config};
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check(threw, "invalid movement configuration is rejected");
 }
 } // namespace
 
@@ -160,11 +199,14 @@ int main() {
     test_counter_strafe_beats_release();
     test_reversal_crosses_zero_consistently();
     test_ground_speed_cap_after_direction_change();
+    test_crouch_does_not_erase_existing_momentum();
+    test_crouched_acceleration_uses_lower_target_speed();
     test_jump_is_reported_once();
     test_air_speed_cap();
     test_crouch_transition_is_bounded();
     test_replay_is_repeatable_with_same_build();
     test_invalid_configuration_rejected();
+    test_invalid_state_rejected();
     test_invalid_input_rejected();
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";

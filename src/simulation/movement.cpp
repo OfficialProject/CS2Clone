@@ -47,13 +47,24 @@ void accelerate_toward(Vec2& velocity, const Vec2 wish_direction,
     velocity.y += acceleration_speed * wish_direction.y;
 }
 
+void decelerate_to_speed(Vec2& velocity, const double maximum,
+                          const double deceleration, const double dt) noexcept {
+    const double speed = length(velocity);
+    if (speed <= maximum || speed <= kEpsilon) return;
+    const double new_speed = std::max(maximum, speed - deceleration * dt);
+    const double scale = new_speed / speed;
+    velocity.x *= scale;
+    velocity.y *= scale;
+}
+
 void apply_friction(Vec2& velocity, const double friction, const double dt) noexcept {
     const double speed = length(velocity);
     if (speed <= kEpsilon) {
         velocity = {};
         return;
     }
-    const double new_speed = std::max(0.0, speed - speed * friction * dt);
+    const double drop = speed * friction * dt;
+    const double new_speed = std::max(0.0, speed - drop);
     const double scale = new_speed / speed;
     velocity.x *= scale;
     velocity.y *= scale;
@@ -85,6 +96,18 @@ MovementOutput MovementSimulator::step(MovementState& state, const MovementInput
     if (!std::isfinite(input.forward) || !std::isfinite(input.right)) {
         throw std::invalid_argument("Movement input axes must be finite");
     }
+    if (!std::isfinite(state.position.x) || !std::isfinite(state.position.y) ||
+        !std::isfinite(state.velocity.x) || !std::isfinite(state.velocity.y) ||
+        !std::isfinite(state.vertical_position) || !std::isfinite(state.vertical_velocity) ||
+        !std::isfinite(state.crouch_fraction) || state.crouch_fraction < 0.0 ||
+        state.crouch_fraction > 1.0 ||
+        (state.mode != MovementMode::Grounded && state.mode != MovementMode::Airborne)) {
+        throw std::invalid_argument("Movement state is invalid");
+    }
+    if (state.tick == UINT64_MAX) {
+        throw std::overflow_error("Movement tick counter overflow");
+    }
+
     const double dt = config_.fixed_dt;
     const double crouch_target = input.crouch_held ? 1.0 : 0.0;
     const double stance_step = dt / config_.crouch_transition_seconds;
@@ -106,7 +129,11 @@ MovementOutput MovementSimulator::step(MovementState& state, const MovementInput
                               config_.ground_max_speed * crouch_multiplier,
                               config_.ground_acceleration, dt);
         }
-        clamp_speed(state.velocity, config_.ground_max_speed * crouch_multiplier);
+        // Crouch lowers the target speed and brakes existing momentum gradually.
+        decelerate_to_speed(state.velocity, config_.ground_max_speed * crouch_multiplier,
+                            config_.ground_acceleration, dt);
+        clamp_speed(state.velocity, config_.ground_max_speed);
+
         if (input.jump_pressed) {
             state.mode = MovementMode::Airborne;
             state.vertical_velocity = config_.jump_speed;
@@ -138,6 +165,9 @@ MovementOutput MovementSimulator::step(MovementState& state, const MovementInput
         const double range = config_.inaccurate_speed - config_.full_accuracy_speed;
         accuracy = 1.0 - (speed - config_.full_accuracy_speed) / range;
     }
+    // This is only a movement-derived signal. Weapon-specific precision,
+    // recoil, spread, jumping and collision are not modeled in this milestone.
     return MovementOutput{speed, std::clamp(accuracy, 0.0, 1.0), jumped};
 }
+
 } // namespace game::simulation

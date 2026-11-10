@@ -14,7 +14,7 @@ This module is a headless, fixed-step, two-dimensional horizontal movement exper
 4. Opposite directional input actively accelerates against the existing velocity. In the current parameter set this brakes faster than passive friction.
 5. Direction reversal passes through zero velocity through the same acceleration rule; there is no special reversal teleport or hidden state.
 6. Ground and air horizontal speeds are capped. Air acceleration is lower than ground acceleration in the initial experiment.
-7. Crouch is represented as a time-based stance fraction and reduces the target ground speed. It does not currently alter collision geometry or grant a special accuracy bonus.
+7. Crouch is represented as a time-based stance fraction and reduces the target ground speed. It does not instantly erase existing momentum, alter collision geometry, or grant a special accuracy bonus.
 8. The movement-accuracy output is a provisional continuous signal based on horizontal speed only. It is not a complete weapon-accuracy calculation and does not yet account for airborne state, stance, weapon characteristics, recoil, spread, or animation.
 9. Jump is a per-step command supplied by the caller. A caller must not hold jump_pressed true across multiple simulation steps unless repeated jump attempts are intended.
 
