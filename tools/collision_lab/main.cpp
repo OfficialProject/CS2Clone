@@ -371,7 +371,8 @@ void resolve_player_pair_symmetrically(VirtualCharacter& first, VirtualCharacter
 }
 
 
-void resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players) {
+void resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players,
+                                      const bool project_world = false) {
     std::sort(players.begin(), players.end(), [](const VirtualCharacter* a, const VirtualCharacter* b) {
         return a->stable_id() < b->stable_id();
     });
@@ -380,6 +381,9 @@ void resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players) {
             for (std::size_t second = first + 1; second < players.size(); ++second) {
                 resolve_player_pair_symmetrically(*players[first], *players[second]);
             }
+        }
+        if (project_world) {
+            for (VirtualCharacter* player : players) player->project_world();
         }
     }
 }
@@ -599,6 +603,96 @@ void test_player_collision_against_wall() {
 }
 
 
+
+struct PlayerWallGroupResult {
+    std::vector<JPH::RVec3> positions;
+    float minimum_separation = std::numeric_limits<float>::max();
+    float wall_clearance = 0.0f;
+};
+
+PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
+                                                const bool reverse_order) {
+    JoltWorld world;
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
+    constexpr float wall_near_face = 6.4f;
+    world.add_box(JPH::RVec3(0.0f, 1.0f, 6.5f), JPH::Vec3(5.0f, 1.0f, 0.1f));
+
+    std::vector<std::unique_ptr<VirtualCharacter>> owned_players;
+    std::vector<VirtualCharacter*> players;
+    owned_players.reserve(10);
+    players.reserve(10);
+    for (std::uint32_t index = 0; index < 10; ++index) {
+        const float z = 0.23f + static_cast<float>(index) * 0.65f;
+        owned_players.push_back(std::make_unique<VirtualCharacter>(
+            world, JPH::RVec3(0.0f, 0.0f, z), false, index + 1, use_jolt_collision));
+        players.push_back(owned_players.back().get());
+    }
+
+    for (int tick = 0; tick < 128; ++tick) {
+        if (reverse_order) {
+            for (std::size_t i = players.size(); i-- > 0;)
+                players[i]->step(JPH::Vec3(0.0f, 0.0f, 2.0f));
+        } else {
+            for (VirtualCharacter* player : players)
+                player->step(JPH::Vec3(0.0f, 0.0f, 2.0f));
+        }
+        if (!use_jolt_collision) resolve_player_set_symmetrically(players, true);
+    }
+
+    PlayerWallGroupResult result;
+    result.positions.reserve(players.size());
+    for (const VirtualCharacter* player : players) result.positions.push_back(player->position());
+    for (std::size_t first = 0; first < result.positions.size(); ++first) {
+        for (std::size_t second = first + 1; second < result.positions.size(); ++second) {
+            result.minimum_separation = std::min(
+                result.minimum_separation, distance(result.positions[first], result.positions[second]));
+        }
+    }
+    const JPH::AABox front_bounds = players.back()->world_bounds();
+    result.wall_clearance = wall_near_face -
+        static_cast<float>(front_bounds.mMax.GetZ()) - players.back()->character_padding();
+    return result;
+}
+
+void test_ten_player_corridor_wall() {
+    const PlayerWallGroupResult jolt_forward = run_ten_player_wall_group(true, false);
+    const PlayerWallGroupResult jolt_reverse = run_ten_player_wall_group(true, true);
+    const PlayerWallGroupResult symmetric_forward = run_ten_player_wall_group(false, false);
+    const PlayerWallGroupResult symmetric_reverse = run_ten_player_wall_group(false, true);
+
+    float jolt_max_order_error = 0.0f;
+    float symmetric_max_order_error = 0.0f;
+    for (std::size_t i = 0; i < jolt_forward.positions.size(); ++i) {
+        jolt_max_order_error = std::max(
+            jolt_max_order_error, distance(jolt_forward.positions[i], jolt_reverse.positions[i]));
+        symmetric_max_order_error = std::max(
+            symmetric_max_order_error,
+            distance(symmetric_forward.positions[i], symmetric_reverse.positions[i]));
+    }
+
+    std::cout << "10-player corridor Jolt: min separation=" << jolt_forward.minimum_separation
+              << " wall clearance=" << jolt_forward.wall_clearance
+              << " order delta=" << jolt_max_order_error << '\\n';
+    std::cout << "10-player corridor symmetric: min separation=" << symmetric_forward.minimum_separation
+              << " wall clearance=" << symmetric_forward.wall_clearance
+              << " order delta=" << symmetric_max_order_error << '\\n';
+    check(jolt_forward.minimum_separation > 0.63f && jolt_reverse.minimum_separation > 0.63f,
+          "Jolt keeps ten players separated in a wall-ended corridor");
+    check(jolt_forward.wall_clearance > -0.001f && jolt_reverse.wall_clearance > -0.001f,
+          "Jolt keeps the front player outside the corridor wall");
+    check(jolt_max_order_error < 0.05f,
+          "Jolt ten-player corridor remains within update-order tolerance");
+    check(symmetric_forward.minimum_separation > 0.639f &&
+              symmetric_reverse.minimum_separation > 0.639f,
+          "symmetric resolver keeps ten players separated in a wall-ended corridor");
+    check(symmetric_forward.wall_clearance > -0.001f &&
+              symmetric_reverse.wall_clearance > -0.001f,
+          "world-projected symmetric resolver keeps the front player outside the wall");
+    check(symmetric_max_order_error < 0.001f,
+          "world-projected ten-player corridor is independent of update order");
+}
+
+
 void test_character_state_replay() {
     JoltWorld world;
     world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
@@ -631,6 +725,7 @@ int main() {
     test_player_player_collision();
     test_ten_player_collision();
     test_player_collision_against_wall();
+    test_ten_player_corridor_wall();
     test_character_state_replay();
 
     if (failures != 0) {
