@@ -19,3 +19,14 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  jolt-collision-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Jolt experiment
+        run: cmake -S . -B build-jolt -DCMAKE_BUILD_TYPE=Release -DCS2CLONE_BUILD_JOLT_LAB=ON
+      - name: Build Jolt experiment
+        run: cmake --build build-jolt --parallel 2
+      - name: Test Jolt collision laboratory
+        run: ctest --test-dir build-jolt --output-on-failure
