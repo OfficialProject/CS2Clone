@@ -47,23 +47,13 @@ void accelerate_toward(Vec2& velocity, const Vec2 wish_direction,
     velocity.y += acceleration_speed * wish_direction.y;
 }
 
-void decelerate_to_speed(Vec2& velocity, const double maximum,
-                          const double deceleration, const double dt) noexcept {
-    const double speed = length(velocity);
-    if (speed <= maximum || speed <= kEpsilon) return;
-    const double new_speed = std::max(maximum, speed - deceleration * dt);
-    const double scale = new_speed / speed;
-    velocity.x *= scale;
-    velocity.y *= scale;
-}
-
-void apply_friction(Vec2& velocity, const double friction, const double dt) noexcept {
+void apply_friction(Vec2& velocity, const double friction, const double stop_speed, const double dt) noexcept {
     const double speed = length(velocity);
     if (speed <= kEpsilon) {
         velocity = {};
         return;
     }
-    const double drop = speed * friction * dt;
+    const double drop = std::max(speed, stop_speed) * friction * dt;
     const double new_speed = std::max(0.0, speed - drop);
     const double scale = new_speed / speed;
     velocity.x *= scale;
@@ -75,7 +65,9 @@ MovementSimulator::MovementSimulator(MovementConfig config) : config_(config) {
     if (!std::isfinite(config_.fixed_dt) || !std::isfinite(config_.ground_max_speed) ||
         !std::isfinite(config_.crouch_speed_multiplier) ||
         !std::isfinite(config_.ground_acceleration) || !std::isfinite(config_.ground_friction) ||
-        !std::isfinite(config_.air_acceleration) || !std::isfinite(config_.air_max_speed) ||
+        !std::isfinite(config_.stop_speed) || !std::isfinite(config_.surface_friction) ||
+        !std::isfinite(config_.walk_speed_multiplier) ||
+        !std::isfinite(config_.air_acceleration) || !std::isfinite(config_.air_wish_speed_cap) ||
         !std::isfinite(config_.gravity) || !std::isfinite(config_.jump_speed) ||
         !std::isfinite(config_.crouch_transition_seconds) ||
         !std::isfinite(config_.full_accuracy_speed) ||
@@ -83,7 +75,9 @@ MovementSimulator::MovementSimulator(MovementConfig config) : config_(config) {
         !(config_.crouch_speed_multiplier > 0.0 && config_.crouch_speed_multiplier <= 1.0) ||
         !(config_.fixed_dt > 0.0) || !(config_.ground_max_speed > 0.0) ||
         !(config_.ground_acceleration > 0.0) || !(config_.ground_friction >= 0.0) ||
-        !(config_.air_acceleration > 0.0) || !(config_.air_max_speed > 0.0) ||
+        !(config_.stop_speed >= 0.0) || !(config_.surface_friction >= 0.0) ||
+        !(config_.walk_speed_multiplier > 0.0 && config_.walk_speed_multiplier <= 1.0) ||
+        !(config_.air_acceleration > 0.0) || !(config_.air_wish_speed_cap > 0.0) ||
         !(config_.gravity > 0.0) || !(config_.jump_speed > 0.0) ||
         !(config_.crouch_transition_seconds > 0.0) ||
         !(config_.full_accuracy_speed >= 0.0) ||
@@ -118,41 +112,59 @@ MovementOutput MovementSimulator::step(MovementState& state, const MovementInput
     }
 
     const Vec2 wish = normalized_input(input.forward, input.right);
-    bool jumped = false;
-    const double crouch_multiplier = 1.0 - state.crouch_fraction * (1.0 - config_.crouch_speed_multiplier);
+    const double input_length = length(wish);
+    const Vec2 direction = input_length > kEpsilon
+        ? Vec2{wish.x / input_length, wish.y / input_length} : Vec2{};
+    const double crouch_multiplier = 1.0 - state.crouch_fraction *
+        (1.0 - config_.crouch_speed_multiplier);
+    const bool walking = input.walk_held && !input.crouch_held && state.crouch_fraction <= 0.0;
+    double max_speed = config_.ground_max_speed * crouch_multiplier;
+    if (walking && length(state.velocity) < max_speed * config_.walk_speed_multiplier +
+        25.0 * MovementConfig::source_unit) {
+        max_speed *= config_.walk_speed_multiplier;
+    }
+
+    const bool jumped = state.mode == MovementMode::Grounded && input.jump_pressed;
+    if (jumped) {
+        clamp_speed(state.velocity, config_.ground_max_speed * 1.1);
+        state.mode = MovementMode::Airborne;
+        state.vertical_velocity = config_.jump_speed;
+    }
 
     if (state.mode == MovementMode::Grounded) {
-        if (std::abs(wish.x) <= kEpsilon && std::abs(wish.y) <= kEpsilon) {
-            apply_friction(state.velocity, config_.ground_friction, dt);
-        } else {
-            accelerate_toward(state.velocity, wish,
-                              config_.ground_max_speed * crouch_multiplier,
-                              config_.ground_acceleration, dt);
+        apply_friction(state.velocity, config_.ground_friction * config_.surface_friction,
+                       config_.stop_speed, dt);
+        double acceleration_scale = std::max(250.0 * MovementConfig::source_unit,
+                                            config_.ground_max_speed);
+        acceleration_scale *= crouch_multiplier;
+        if (walking) acceleration_scale *= config_.walk_speed_multiplier;
+        double acceleration = config_.ground_acceleration;
+        if (walking) {
+            const double goal = config_.ground_max_speed * config_.walk_speed_multiplier;
+            const double projected = std::max(0.0, state.velocity.x * direction.x +
+                                                   state.velocity.y * direction.y);
+            const double ramp = 5.0 * MovementConfig::source_unit;
+            acceleration *= std::clamp((goal - projected) / ramp, 0.0, 1.0);
         }
-        // Crouch lowers the target speed and brakes existing momentum gradually.
-        decelerate_to_speed(state.velocity, config_.ground_max_speed * crouch_multiplier,
-                            config_.ground_acceleration, dt);
-        clamp_speed(state.velocity, config_.ground_max_speed);
-
-        if (input.jump_pressed) {
-            state.mode = MovementMode::Airborne;
-            state.vertical_velocity = config_.jump_speed;
-            jumped = true;
-        }
+        accelerate_toward(state.velocity, direction, max_speed * input_length,
+                          acceleration * acceleration_scale * config_.surface_friction, dt);
+        clamp_speed(state.velocity, max_speed);
+        if (length(state.velocity) < MovementConfig::source_unit) state.velocity = {};
     } else {
-        accelerate_toward(state.velocity, wish,
-                          config_.air_max_speed * crouch_multiplier,
-                          config_.air_acceleration, dt);
-        clamp_speed(state.velocity, config_.air_max_speed);
-        state.vertical_velocity -= config_.gravity * dt;
+        const double wish_speed = max_speed * input_length;
+        accelerate_toward(state.velocity, direction,
+                          std::min(wish_speed, config_.air_wish_speed_cap),
+                          config_.air_acceleration * wish_speed * config_.surface_friction, dt);
+        // Symmetric gravity integration matches Source's two half-gravity steps.
+        state.vertical_velocity -= config_.gravity * dt * 0.5;
         state.vertical_position += state.vertical_velocity * dt;
+        state.vertical_velocity -= config_.gravity * dt * 0.5;
         if (state.vertical_position <= 0.0 && state.vertical_velocity < 0.0) {
             state.vertical_position = 0.0;
             state.vertical_velocity = 0.0;
             state.mode = MovementMode::Grounded;
         }
     }
-
     state.position.x += state.velocity.x * dt;
     state.position.y += state.velocity.y * dt;
     ++state.tick;

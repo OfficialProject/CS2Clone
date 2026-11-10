@@ -16,18 +16,24 @@ struct MovementInput {
     double right{};
     bool jump_pressed{};
     bool crouch_held{};
+    bool walk_held{};
 };
 
 struct MovementConfig {
+    // World scale preserves the existing scene: 250 Source units = 5.8 scene units.
+    static constexpr double source_unit = 5.8 / 250.0;
     double fixed_dt{1.0 / 128.0};
     double ground_max_speed{5.8};
-    double crouch_speed_multiplier{0.72};
-    double ground_acceleration{38.0};
-    double ground_friction{8.0};
-    double air_acceleration{9.0};
-    double air_max_speed{6.2};
-    double gravity{20.0};
-    double jump_speed{6.5};
+    double crouch_speed_multiplier{0.34};
+    double walk_speed_multiplier{0.52};
+    double ground_acceleration{5.5};
+    double ground_friction{5.2};
+    double stop_speed{80.0 * source_unit};
+    double surface_friction{1.0};
+    double air_acceleration{12.0};
+    double air_wish_speed_cap{30.0 * source_unit};
+    double gravity{800.0 * source_unit};
+    double jump_speed{301.993377 * source_unit};
     double crouch_transition_seconds{0.12};
     double full_accuracy_speed{0.12};
     double inaccurate_speed{1.8};

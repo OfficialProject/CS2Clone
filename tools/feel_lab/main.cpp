@@ -44,8 +44,6 @@ bool ray_hits_wall(const Ray ray, float& nearest) {
 
 int main(int argc, char* argv[]) {
     MovementConfig cfg;
-    // Experimental: allow a running jump to reverse with airtime remaining.
-    cfg.air_acceleration = 18.0;
     MovementSimulator simulation(cfg);
     if (argc != 1) {
         if (argc == 3 && std::string_view(argv[1]) == "--record-drills") {
@@ -60,7 +58,7 @@ int main(int argc, char* argv[]) {
     InitWindow(1280, 720, "CS2Clone | Movement Feel Lab");
     SetTargetFPS(240);
     SetExitKey(KEY_NULL);
-    SetWindowMinSize(520, 440);
+    SetWindowMinSize(520, 480);
     feel_lab::Settings settings;
     settings.load();
     DisableCursor();
@@ -114,6 +112,7 @@ int main(int argc, char* argv[]) {
                 input.right = static_cast<double>(f * sn + r * cs);
                 input.jump_pressed = jump && !prev_jump;
                 input.crouch_held = crouch;
+                input.walk_held = IsKeyDown(settings.keys[feel_lab::Settings::Walk]);
                 const MovementState old = state;
                 (void)simulation.step(state, input);
                 const float height = static_cast<float>(state.vertical_position);

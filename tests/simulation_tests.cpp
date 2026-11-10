@@ -117,16 +117,37 @@ void test_jump_is_reported_once() {
 void test_air_speed_cap() {
     MovementState state;
     state.mode = MovementMode::Airborne;
-    state.vertical_position = 1.0;
+    state.vertical_position = 100.0;
     state.velocity = {6.0, 0.0};
     const MovementSimulator simulator;
-    const auto result = run(simulator, state, {.forward = 1.0, .right = 1.0}, 20);
-    const double speed = std::sqrt(result.velocity.x * result.velocity.x +
-                                   result.velocity.y * result.velocity.y);
-    check(speed <= simulator.config().air_max_speed + 1.0e-8,
-          "airborne horizontal speed remains capped");
+    const auto result = run(simulator, state, {.forward = 1.0}, 20);
+    check(std::abs(result.velocity.x - 6.0) < 1e-9,
+          "air steering preserves orthogonal momentum");
+    check(std::abs(result.velocity.y - simulator.config().air_wish_speed_cap) < 1e-9,
+          "air acceleration caps only the requested direction");
+    check(std::hypot(result.velocity.x, result.velocity.y) > 6.0,
+          "air strafing can add speed without a total-speed clamp");
 }
 
+void test_csgo_friction_and_air_reverse() {
+    const MovementSimulator simulator;
+    MovementState passive;
+    passive.velocity.y = 0.5;
+    (void)simulator.step(passive, {});
+    const auto& cfg = simulator.config();
+    const double expected = 0.5 - cfg.stop_speed * cfg.ground_friction * cfg.fixed_dt;
+    check(std::abs(passive.velocity.y - expected) < 1e-9,
+          "low-speed ground friction uses the stop-speed floor");
+    MovementState reverse;
+    reverse.mode = MovementMode::Airborne;
+    reverse.vertical_position = 100;
+    reverse.velocity.y = cfg.ground_max_speed;
+    reverse = run(simulator, reverse, {.forward = -1.0}, 30);
+    check(reverse.velocity.y < 0,
+          "reverse air input crosses zero while airborne");
+    check(reverse.velocity.y >= -cfg.air_wish_speed_cap - 1e-9,
+          "reversal respects the directional air wish cap");
+}
 void test_crouch_transition_is_bounded() {
     const MovementSimulator simulator;
     MovementState state;
@@ -227,6 +248,7 @@ int main() {
     test_crouched_acceleration_uses_lower_target_speed();
     test_jump_is_reported_once();
     test_air_speed_cap();
+    test_csgo_friction_and_air_reverse();
     test_crouch_transition_is_bounded();
     test_128_and_256_hz_are_comparable();
     test_replay_is_repeatable_with_same_build();
