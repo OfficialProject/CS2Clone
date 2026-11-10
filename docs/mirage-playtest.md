@@ -22,3 +22,7 @@ The Windows playtest workflow builds and runs asset-independent collision tests.
 Open **Local Lobby** to choose Target Practice, Plant the Bomb as T, or Defuse the Bomb as CT. Settings are available from the main menu, lobby, pause menu and match. Press Esc during a round to resume, restart, or return to the lobby. Completed rounds display a result and offer a rematch.
 
 In Plant mode, hold Use / C4 (F by default) on the ground at A or B for three seconds, then let the 40-second fuse run out. In Defuse mode, start at CT spawn with a live bomb at A. Hold Use / C4 near it for ten seconds before it detonates. Releasing the control interrupts progress. The fuse, arming and no-kit defuse times follow the CS:GO snapshot. The 115-second plant window is a local practice preset. These scenarios run solo.
+
+Choose **Offline Match** in the Mirage lobby for a short local match against two bots. You start as T, switch to CT after three rounds, and play until either side wins four rounds or the score is tied after six. The buy menu opens before each round. Use **B** to reopen it during the buy phase and **1 / 2 / 3** to equip rifle, pistol, or knife. Reload, fire, and Use follow your settings. The scoreboard appears after each round and again at match end.
+
+The bots guard A, shoot when they have a clear line of sight, and move locally to plant or defuse. They use collision but do not navigate the full map. Weapon models are geometric placeholders with a separate 60-degree viewmodel projection. Weapon and economy values are local match tuning.

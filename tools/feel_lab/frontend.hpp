@@ -18,6 +18,7 @@ struct Frontend {
     const char* mode_name() const {
         switch (selected) {
         case GameMode::Practice: return "Target Practice";
+        case GameMode::OfflineMatch: return "Offline Match";
         case GameMode::Plant: return "Plant the Bomb";
         case GameMode::Defuse: return "Defuse the Bomb";
         }
@@ -27,13 +28,14 @@ struct Frontend {
     const char* mode_description() const {
         switch (selected) {
         case GameMode::Practice: return "Clear five targets against the clock.";
+        case GameMode::OfflineMatch: return "Bomb rounds against two bots.";
         case GameMode::Plant: return "Reach A or B and plant the C4.";
         case GameMode::Defuse: return "Reach A and defuse before the fuse ends.";
         }
         return "";
     }
 
-    Action draw(Settings& settings, bool mirage, bool won, const char* result) {
+    Action draw(Settings& settings, bool mirage, bool won, const char* result, const char* next_label="Play again", const char* score="") {
         if (!menu() || settings.visible) return Action::None;
         const int width=GetScreenWidth();
         const int height=GetScreenHeight();
@@ -69,13 +71,15 @@ struct Frontend {
             DrawRectangle(margin+map_width,card_top,width-margin-map_width,card_height,backdrop);
             DrawRectangle(0,card_top+card_height,width,height-card_top-card_height,backdrop);
             ui::label("LOCAL LOBBY",margin,82,29);
-            const int tab_width=(content-16)/3;
-            if (ui::button(margin,132,tab_width,40,"Target Practice",selected==GameMode::Practice))
+            const int tab_width=(content-24)/4;
+            if (ui::button(margin,132,tab_width,40,"Targets",selected==GameMode::Practice))
                 selected=GameMode::Practice;
-            if (mirage && ui::button(margin+tab_width+8,132,tab_width,40,"Plant the Bomb",selected==GameMode::Plant))
+            if (mirage && ui::button(margin+tab_width+8,132,tab_width,40,"Plant",selected==GameMode::Plant))
                 selected=GameMode::Plant;
-            if (mirage && ui::button(margin+2*(tab_width+8),132,tab_width,40,"Defuse the Bomb",selected==GameMode::Defuse))
+            if (mirage && ui::button(margin+2*(tab_width+8),132,tab_width,40,"Defuse",selected==GameMode::Defuse))
                 selected=GameMode::Defuse;
+            if (mirage && ui::button(margin+3*(tab_width+8),132,tab_width,40,"Offline Match",selected==GameMode::OfflineMatch))
+                selected=GameMode::OfflineMatch;
 
             DrawRectangle(margin,card_top,map_width,card_height,{15,25,33,70});
             DrawRectangleGradientV(margin,card_top+card_height-102,map_width,102,{10,17,24,25},{10,17,24,245});
@@ -85,7 +89,7 @@ struct Frontend {
 
             DrawRectangle(details_x,card_top,details_width,card_height,ui::panel);
             ui::label("SESSION",details_x+16,card_top+20,15,ui::muted);
-            ui::label("Local  /  1 player",details_x+16,card_top+49,19);
+            ui::label(selected==GameMode::OfflineMatch?"Local / 1 player / 2 bots":"Local / 1 player",details_x+16,card_top+49,19);
             DrawRectangle(details_x+16,card_top+87,details_width-32,1,ui::line);
             ui::label(mode_name(),details_x+16,card_top+106,22);
             if (details_width>=340) ui::label(mode_description(),details_x+16,card_top+147,16,ui::muted);
@@ -101,9 +105,10 @@ struct Frontend {
             ui::label(paused?"PAUSED":won?"ROUND WON":"ROUND LOST",left+24,top+25,34,
                       paused?ui::text:won?ui::accent:ORANGE);
             ui::label(paused?mode_name():result,left+24,top+77,18,ui::muted);
-            if (ui::button(left+24,top+125,380,41,paused?"Resume":"Play again",false,true))
+            if (!paused) ui::label(score,left+24,top+105,17,ui::accent);
+            if (ui::button(left+24,top+137,380,41,paused?"Resume":next_label,false,true))
                 return paused?Action::Resume:Action::Start;
-            if (paused && ui::button(left+24,top+174,380,41,"Restart round")) return Action::Start;
+            if (paused && ui::button(left+24,top+181,380,41,"Restart round")) return Action::Start;
             if (ui::button(left+24,top+223,380,41,"Settings")) settings.visible=true;
             if (ui::button(left+24,top+272,380,41,"Return to lobby")) screen=Screen::Lobby;
         }
