@@ -54,10 +54,10 @@ class MapCollision {
             const float a = Vector3DotProduct(triangle.a, axis);
             const float b = Vector3DotProduct(triangle.b, axis);
             const float c = Vector3DotProduct(triangle.c, axis);
-            const float radius = std::fabs(axis.x)*half.x + std::fabs(axis.y)*half.y +
+            const float projected_half_extent = std::fabs(axis.x)*half.x + std::fabs(axis.y)*half.y +
                                  std::fabs(axis.z)*half.z;
-            const float low = std::min({a,b,c}) - radius;
-            const float high = std::max({a,b,c}) + radius;
+            const float low = std::min({a,b,c}) - projected_half_extent;
+            const float high = std::max({a,b,c}) + projected_half_extent;
             const float origin = Vector3DotProduct(center, axis);
             const float speed = Vector3DotProduct(delta, axis);
             if (std::fabs(speed) < 1e-8f) {
