@@ -49,3 +49,7 @@ To download: open [Playtest build Actions](https://github.com/OfficialProject/CS
 Controls: WASD move, mouse look, left-click shoot, Space jump, Ctrl/C crouch, R reset, Esc toggle mouse capture. Compare stopping, counter-strafing and crouch momentum against your expectations. Values are provisional.
 
 Local build (optional): `cmake -S . -B build -DCS2CLONE_BUILD_PLAYTEST=ON`, then `cmake --build build --config Release --target feel_lab`. This optional target fetches [raylib 5.5](https://github.com/raysan5/raylib) (zlib/libpng license); the default headless engine build remains dependency-free.
+
+## Offline CS2 demo analysis
+
+[Demo movement analysis](tools/demo_movement/README.md) documents the Python parser, input audit, CSV/JSON outputs, plots and tests. It runs independently of the C++ engine.

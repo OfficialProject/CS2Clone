@@ -1,0 +1,23 @@
+name: Demo movement analysis
+
+on:
+  push:
+    paths:
+      - 'tools/demo_movement/**'
+      - '.github/workflows/demo-movement.yml'
+  pull_request:
+    paths:
+      - 'tools/demo_movement/**'
+      - '.github/workflows/demo-movement.yml'
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r tools/demo_movement/requirements.txt
+      - run: python -c "import demoparser2"
+      - run: python -m unittest discover -s tools/demo_movement -v
