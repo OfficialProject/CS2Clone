@@ -372,11 +372,12 @@ void resolve_player_pair_symmetrically(VirtualCharacter& first, VirtualCharacter
 
 
 void resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players,
-                                      const bool project_world = false) {
+                                      const bool project_world = false,
+                                      const int max_iterations = 32) {
     std::sort(players.begin(), players.end(), [](const VirtualCharacter* a, const VirtualCharacter* b) {
         return a->stable_id() < b->stable_id();
     });
-    for (int iteration = 0; iteration < 32; ++iteration) {
+    for (int iteration = 0; iteration < max_iterations; ++iteration) {
         for (std::size_t first = 0; first < players.size(); ++first) {
             for (std::size_t second = first + 1; second < players.size(); ++second) {
                 resolve_player_pair_symmetrically(*players[first], *players[second]);
@@ -636,7 +637,7 @@ PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
             for (VirtualCharacter* player : players)
                 player->step(JPH::Vec3(0.0f, 0.0f, 2.0f));
         }
-        if (!use_jolt_collision) resolve_player_set_symmetrically(players, true);
+        if (!use_jolt_collision) resolve_player_set_symmetrically(players, true, 64);
     }
 
     PlayerWallGroupResult result;
@@ -672,10 +673,10 @@ void test_ten_player_corridor_wall() {
 
     std::cout << "10-player corridor Jolt: min separation=" << jolt_forward.minimum_separation
               << " wall clearance=" << jolt_forward.wall_clearance
-              << " order delta=" << jolt_max_order_error << '\\n';
+              << " order delta=" << jolt_max_order_error << '\n';
     std::cout << "10-player corridor symmetric: min separation=" << symmetric_forward.minimum_separation
               << " wall clearance=" << symmetric_forward.wall_clearance
-              << " order delta=" << symmetric_max_order_error << '\\n';
+              << " order delta=" << symmetric_max_order_error << '\n';
     check(jolt_forward.minimum_separation > 0.63f && jolt_reverse.minimum_separation > 0.63f,
           "Jolt keeps ten players separated in a wall-ended corridor");
     check(jolt_forward.wall_clearance > -0.001f && jolt_reverse.wall_clearance > -0.001f,
