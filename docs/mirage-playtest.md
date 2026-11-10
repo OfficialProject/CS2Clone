@@ -18,3 +18,7 @@ python tools/map_import/import_mirage.py "C:/Program Files (x86)/Steam/steamapps
 The importer writes the map and a JSON report with the input hash, triangle counts, spawn coordinates, and export filters. Use a new export directory and output filename on each run. The map stays local and is loaded separately from the executable. You can also pass its path with `--map`.
 
 The Windows playtest workflow builds and runs asset-independent collision tests. The optional `--validate-map` command loads a local map and checks a spawn jump, landing, and movement from T spawn without opening a window.
+
+Open **Local Lobby** to choose Target Practice, Plant the Bomb as T, or Defuse the Bomb as CT. Settings are available from the main menu, lobby, pause menu and match. Press Esc during a round to resume, restart, or return to the lobby. Completed rounds display a result and offer a rematch.
+
+In Plant mode, hold Use / C4 (F by default) on the ground at A or B for three seconds, then let the 40-second fuse run out. In Defuse mode, start at CT spawn with a live bomb at A. Hold Use / C4 near it for ten seconds before it detonates. Releasing the control interrupts progress. The fuse, arming and no-kit defuse times follow the CS:GO snapshot. The 115-second plant window is a local practice preset. These scenarios run solo.

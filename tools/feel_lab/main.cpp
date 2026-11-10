@@ -1,7 +1,7 @@
 #include "drills.hpp"
 #include "raylib.h"
 #include "raymath.h"
-#include "settings.hpp"
+#include "frontend.hpp"
 #include "imported_map.hpp"
 #include <algorithm>
 #include <cmath>
@@ -18,6 +18,26 @@ constexpr Wall walls[] = {
     {{0, 1.5f, 7}, {8, 3, 1}}, {{-9, 1.5f, 5}, {5, 3, 1}}
 };
 constexpr std::array<Vector3,5> range_targets{{{0,1.5f,-10},{-10,1.5f,-8},{9,1.5f,-8},{9,1.5f,10},{-10,1.5f,10}}};
+struct Bombsite {
+    Vector3 min;
+    Vector3 max;
+
+    bool contains(Vector3 feet) const {
+        return feet.x >= min.x && feet.x <= max.x && feet.z >= min.z && feet.z <= max.z &&
+               feet.y >= min.y-0.1f && feet.y <= max.y+0.4f;
+    }
+
+    Vector3 center() const {
+        return {(min.x+max.x)/2,min.y+0.04f,(min.z+max.z)/2};
+    }
+};
+
+// Bounds of the two func_bomb_target brushes in the imported Mirage package.
+constexpr Bombsite site_a{{-54.01f,-4.176f,-14.30f},{-45.75f,-3.619f,-6.124f}};
+constexpr Bombsite site_b{{1.67f,-3.689f,-51.42f},{10.21f,-3.317f,-43.61f}};
+constexpr Vector3 ct_spawn{-45.8432f,-5.548f,-41.2032f};
+constexpr float ct_yaw = -2.635447f;
+
 constexpr int magazine_size = 30;
 constexpr double shot_interval = 0.1;
 constexpr double reload_seconds = 2.5;
@@ -147,10 +167,10 @@ int run_lab(int argc, char* argv[]) {
     InitWindow(1280, 720, "CS2Clone | Movement Feel Lab");
     SetTargetFPS(240);
     SetExitKey(KEY_NULL);
-    SetWindowMinSize(520, 546);
+    SetWindowMinSize(520, 580);
     feel_lab::Settings settings;
     settings.load();
-    if (capture_path.empty()) DisableCursor();
+    EnableCursor();
     if (map.loaded()) map.upload();
     MovementState state;
     state.position = {0, 0};
@@ -166,40 +186,71 @@ int run_lab(int argc, char* argv[]) {
     double next_shot = 0, reload_finish = 0;
     int hits = 0, shots = 0;
     double total_time = 0.0, accumulator = 0.0;
-    bool paused = false, pending_jump = false;
+    using feel_lab::Frontend;
+    using feel_lab::GameMode;
+    using feel_lab::BombRound;
+    Frontend frontend;
+    BombRound round;
+    Vector3 bomb = site_a.center();
+    std::string result_text;
+    bool round_won = false;
+    bool pending_jump = false;
     std::array<bool, feel_lab::Settings::Count> wheel_pulses{};
     float last_hit_flash = 0.0f;
     const char* drill_status = "Record nine movement drills";
+    const auto start_round = [&] {
+        round.start(frontend.selected);
+        frontend.screen = Frontend::Screen::Match;
+        reset_position(state);
+        yaw=map.loaded()?map.spawn_yaw:0;
+        if (round.mode == GameMode::Defuse) {
+            state=map.spawn_player(ct_spawn);
+            yaw=ct_yaw;
+        }
+        bomb=site_a.center();
+        pitch=0;
+        hits=shots=0;
+        total_time=accumulator=0;
+        pending_jump=false;
+        wheel_pulses.fill(false);
+        targets.fill(false);
+        ammunition=magazine_size;
+        next_shot=reload_finish=0;
+        last_hit_flash=0;
+        DisableCursor();
+    };
     while (!WindowShouldClose()) {
         const float frame_dt = std::min(GetFrameTime(), 0.1f);
         const bool was_settings = settings.visible;
-        const bool cursor_was_free = was_settings || paused;
+        const bool cursor_was_free = was_settings || frontend.menu();
         if (IsKeyPressed(KEY_TAB)) {
             settings.visible = !settings.visible;
             settings.rebinding = -1;
         } else if (IsKeyPressed(KEY_ESCAPE)) {
             if (settings.rebinding >= 0) settings.rebinding = -1;
             else if (settings.visible) settings.visible = false;
-            else paused = !paused;
+            else if (frontend.screen == Frontend::Screen::Match) frontend.screen=Frontend::Screen::Pause;
+            else if (frontend.screen == Frontend::Screen::Pause) frontend.screen=Frontend::Screen::Match;
+            else if (frontend.screen == Frontend::Screen::Lobby) frontend.screen=Frontend::Screen::Home;
         }
-        const bool cursor_is_free = settings.visible || paused;
+        const bool cursor_is_free = settings.visible || frontend.menu();
         if (cursor_is_free != cursor_was_free) {
             if (cursor_is_free) EnableCursor();
             else DisableCursor();
         }
         if (settings.visible && was_settings && !IsKeyPressed(KEY_ESCAPE)) settings.update();
-        const bool accepting_input = !settings.visible && !was_settings;
-        if (accepting_input && settings.pressed(feel_lab::Settings::Reset)) {reset_position(state); yaw=map.loaded()?map.spawn_yaw:0; pitch=0; hits=0; shots=0; total_time=0; accumulator=0; pending_jump=false; wheel_pulses.fill(false); targets.fill(false); ammunition=magazine_size; next_shot=0; reload_finish=0;}
+        const bool accepting_input = !settings.visible && !was_settings && !frontend.menu();
+        if (accepting_input && settings.pressed(feel_lab::Settings::Reset)) start_round();
         if (accepting_input && settings.pressed(feel_lab::Settings::Drills)) {
             drill_status = export_default_drills(simulation)
                 ? "Saved to temp folder / CS2Clone / movement-drills.csv"
                 : "CSV export failed. See the console for details.";
         }
-        if (!accepting_input || paused) {
+        if (!accepting_input) {
             pending_jump = false;
             wheel_pulses.fill(false);
         }
-        if (accepting_input && !paused) {
+        if (accepting_input) {
             const Vector2 mouse = GetMouseDelta();
             yaw += mouse.x * 0.0022f * settings.sensitivity;
             pitch = std::clamp(pitch - mouse.y * 0.0022f * settings.sensitivity, -1.45f, 1.45f);
@@ -230,6 +281,23 @@ int run_lab(int argc, char* argv[]) {
                 input.jump_pressed = pending_jump;
                 input.crouch_held = crouch;
                 input.walk_held = held(Controls::Walk);
+                const Vector3 feet{static_cast<float>(state.position.x),
+                                   static_cast<float>(state.vertical_position),
+                                   static_cast<float>(state.position.y)};
+                const bool grounded = state.mode == MovementMode::Grounded;
+                const bool plant = round.mode == GameMode::Plant && round.phase == BombRound::Phase::Live &&
+                                   (site_a.contains(feet) || site_b.contains(feet));
+                const bool defuse = round.mode == GameMode::Defuse &&
+                                    Vector3Distance(feet,bomb) <= 1.65f;
+                const bool interacting = grounded && settings.down(Controls::Use) && (plant || defuse);
+                const auto previous_phase = round.phase;
+                round.step(cfg.fixed_dt,interacting);
+                if (plant && previous_phase != round.phase && round.phase == BombRound::Phase::Planted)
+                    bomb=feet;
+                if (interacting) {
+                    input.forward=input.right=0;
+                    input.jump_pressed=false;
+                }
                 const MovementState old = state;
                 if (map.loaded()) {
                     map.advance(simulation,state,input);
@@ -248,6 +316,15 @@ int run_lab(int argc, char* argv[]) {
                 if (hits < static_cast<int>(targets.size())) total_time += cfg.fixed_dt;
                 pending_jump = false;
                 wheel_pulses.fill(false);
+                if (round.finished()) {
+                    round_won=round.won();
+                    result_text=round.phase==BombRound::Phase::Defused?"Bomb defused":
+                                round.phase==BombRound::Phase::Expired?"Time expired before the plant":
+                                "Bomb detonated";
+                    frontend.screen=Frontend::Screen::Result;
+                    EnableCursor();
+                    break;
+                }
             }
             const float eye = map.loaded() ? (64.0f-18.0f*static_cast<float>(state.crouch_fraction))*static_cast<float>(MovementConfig::source_unit) : standing_eye + (crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
             const Vector3 pos = {static_cast<float>(state.position.x), eye+static_cast<float>(state.vertical_position), static_cast<float>(state.position.y)};
@@ -260,7 +337,8 @@ int run_lab(int argc, char* argv[]) {
                 reload_finish = total_time + reload_seconds;
             if ((settings.pressed(Controls::Fire) || settings.down(Controls::Fire)) &&
                 ammunition > 0 && reload_finish == 0 && total_time >= next_shot &&
-                hits < static_cast<int>(targets.size())) {
+                !frontend.menu() && round.progress == 0 &&
+                (round.mode != GameMode::Practice || hits < static_cast<int>(targets.size()))) {
                 next_shot = total_time + shot_interval;
                 --ammunition;
                 ++shots;
@@ -270,11 +348,21 @@ int run_lab(int argc, char* argv[]) {
                 else ray_hits_wall(ray,nearest);
                 std::size_t hit=targets.size();
                 for (std::size_t i=0;i<targets.size();++i) {
-                    if (targets[i]) continue;
+                    if (round.mode != GameMode::Practice || targets[i]) continue;
                     const RayCollision c=GetRayCollisionSphere(ray,target_positions[i],0.45f);
                     if(c.hit && c.distance < nearest) {nearest=c.distance;hit=i;}
                 }
-                if(hit<targets.size()) {targets[hit]=true;++hits;last_hit_flash=0.18f;}
+                if (hit<targets.size()) {
+                    targets[hit]=true;
+                    ++hits;
+                    last_hit_flash=0.18f;
+                    if (hits==static_cast<int>(targets.size())) {
+                        round_won=true;
+                        result_text=TextFormat("Five targets cleared in %.1f seconds",total_time);
+                        frontend.screen=Frontend::Screen::Result;
+                        EnableCursor();
+                    }
+                }
             }
         }
         last_hit_flash=std::max(0.0f,last_hit_flash-frame_dt);
@@ -293,31 +381,64 @@ int run_lab(int argc, char* argv[]) {
             for(const Wall& w:walls) {DrawCubeV(w.center,w.size,{93,104,117,255});DrawCubeWiresV(w.center,w.size,{50,55,63,255});}
         }
         for (std::size_t i=0;i<targets.size();++i) {
-            if (targets[i]) continue;
+            if (round.mode != GameMode::Practice || targets[i]) continue;
             DrawSphere(target_positions[i],0.45f,{230,85,55,255});
             DrawSphereWires(target_positions[i],0.45f,8,12,{80,35,20,255});
         }
+        if (round.mode != GameMode::Practice) {
+            if (round.phase == BombRound::Phase::Live) {
+                for (const auto site : {site_a,site_b}) {
+                    const auto marker=site.center();
+                    DrawCylinder(marker,0.7f,0.7f,0.04f,24,ORANGE);
+                }
+            } else {
+                DrawCube(Vector3Add(bomb,{0,0.09f,0}),0.35f,0.18f,0.24f,ORANGE);
+            }
+        }
         EndMode3D();
         const int cx=GetScreenWidth()/2,cy=GetScreenHeight()/2;
-        const Color cross=last_hit_flash>0?GREEN:WHITE;
-        DrawLine(cx-11,cy,cx-4,cy,cross);DrawLine(cx+4,cy,cx+11,cy,cross);
-        DrawLine(cx,cy-11,cx,cy-4,cross);DrawLine(cx,cy+4,cx,cy+11,cross);
-        DrawRectangle(12,12,480,169,{12,18,26,190});
-        DrawText(map.loaded()?"MIRAGE  |  128 Hz movement lab":"MOVEMENT FEEL LAB  |  128 Hz simulation",24,20,19,RAYWHITE);
-        DrawText(TextFormat("Speed: %.2f  |  Crouch: %.0f%%  |  %s",
-            std::hypot(state.velocity.x,state.velocity.y),state.crouch_fraction*100,
-            state.on_ladder?"LADDER":state.mode==MovementMode::Grounded?"GROUND":"AIR"),24,51,18,RAYWHITE);
-        DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24,78,18,RAYWHITE);
-        DrawText(reload_finish > 0 ? "Reloading..." : TextFormat("Ammo: %d/%d  |  Tab settings",ammunition,magazine_size),
-                 24,106,16,RAYWHITE);
-        DrawText(TextFormat("%s reload  |  %s reset",feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reload]),
-                            feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reset])),24,127,16,RAYWHITE);
-        DrawText(TextFormat("%s: %s", feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Drills]), drill_status),24,151,16,RAYWHITE);
-        if(hits==5) {DrawRectangle(cx-225,cy-100,450,50,{18,30,23,220});DrawText("ALL TARGETS HIT",cx-194,cy-86,23,GREEN);}
-        if(paused) DrawText("PAUSED - ESC TO RESUME",cx-160,cy+75,23,YELLOW);
-        DrawFPS(GetScreenWidth()-100,20);
+        if (!frontend.menu() && !settings.visible) {
+            const Color cross=last_hit_flash>0?GREEN:WHITE;
+            DrawLine(cx-11,cy,cx-4,cy,cross);DrawLine(cx+4,cy,cx+11,cy,cross);
+            DrawLine(cx,cy-11,cx,cy-4,cross);DrawLine(cx,cy+4,cx,cy+11,cross);
+            DrawRectangle(12,12,480,169,{12,18,26,190});
+            DrawText(map.loaded()?"MIRAGE  |  128 Hz movement lab":"MOVEMENT FEEL LAB  |  128 Hz simulation",24,20,19,RAYWHITE);
+            DrawText(TextFormat("Speed: %.2f  |  Crouch: %.0f%%  |  %s",
+                std::hypot(state.velocity.x,state.velocity.y),state.crouch_fraction*100,
+                state.on_ladder?"LADDER":state.mode==MovementMode::Grounded?"GROUND":"AIR"),24,51,18,RAYWHITE);
+            if (round.mode == GameMode::Practice) {
+                DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24,78,18,RAYWHITE);
+            } else {
+                const char* objective = round.mode==GameMode::Defuse ? "Defuse at A" :
+                    round.phase==BombRound::Phase::Live ? "Plant at A or B" : "Bomb armed";
+                DrawText(TextFormat("%s  |  %.1f s",objective,round.remaining),24,78,18,RAYWHITE);
+            }
+            DrawText(reload_finish > 0 ? "Reloading..." : TextFormat("Ammo: %d/%d  |  Tab settings",ammunition,magazine_size),
+                     24,106,16,RAYWHITE);
+            DrawText(TextFormat("%s reload  |  %s reset",feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reload]),
+                                feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reset])),24,127,16,RAYWHITE);
+            DrawText(TextFormat("%s: %s", feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Drills]), drill_status),24,151,16,RAYWHITE);
+            if (round.mode != GameMode::Practice && !frontend.menu()) {
+                const auto* action = feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Use]);
+                const bool defusing=round.mode==GameMode::Defuse;
+                if (round.progress > 0) {
+                    const double duration=defusing?BombRound::defuse_seconds:BombRound::plant_seconds;
+                    DrawRectangle(cx-130,cy+67,260,7,DARKGRAY);
+                    DrawRectangle(cx-130,cy+67,static_cast<int>(260*round.progress/duration),7,ORANGE);
+                }
+                DrawText(TextFormat("Hold %s to %s",action,defusing?"defuse":"plant at a bombsite"),cx-130,cy+83,18,RAYWHITE);
+            }
+            DrawFPS(GetScreenWidth()-100,20);
+        }
+        const auto action=frontend.draw(settings,map.loaded(),round_won,result_text.c_str());
         if (settings.visible) settings.draw();
         EndDrawing();
+        if (action==Frontend::Action::Exit) break;
+        if (action==Frontend::Action::Start) start_round();
+        if (action==Frontend::Action::Resume) {
+            frontend.screen=Frontend::Screen::Match;
+            DisableCursor();
+        }
         if (!capture_path.empty() && ++capture_frames == 3) {
             Image frame=LoadImageFromScreen();
             const bool saved=ExportImage(frame,capture_path.string().c_str());

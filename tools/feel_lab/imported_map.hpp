@@ -91,15 +91,17 @@ private:
 public:
     bool loaded() const { return uploaded || !visual.empty(); }
 
-    game::simulation::MovementState spawn_player() const {
+    game::simulation::MovementState spawn_player() const { return spawn_player(spawn); }
+
+    game::simulation::MovementState spawn_player(Vector3 start) const {
         using namespace game::simulation;
         MovementState player;
-        player.position={spawn.x,spawn.z};
-        player.vertical_position=spawn.y;
+        player.position={start.x,start.z};
+        player.vertical_position=start.y;
         player.mode=MovementMode::Airborne;
-        const auto floor=collision.sweep(spawn,{0,-2,0},hull_height(0));
+        const auto floor=collision.sweep(start,{0,-2,0},hull_height(0));
         if (floor.fraction<1 && floor.normal.y>=0.7f) {
-            player.vertical_position=spawn.y-floor.fraction*2+0.001f;
+            player.vertical_position=start.y-floor.fraction*2+0.001f;
             player.mode=MovementMode::Grounded;
         }
         return player;

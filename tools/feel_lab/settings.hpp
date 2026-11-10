@@ -11,14 +11,14 @@
 namespace feel_lab {
 
 struct Settings {
-    enum Action { Forward, Back, Left, Right, Jump, Crouch, Reset, Drills, Walk, Fire, Reload, Count };
+    enum Action { Forward, Back, Left, Right, Jump, Crouch, Reset, Drills, Walk, Fire, Reload, Use, Count };
     static constexpr std::array<const char*, Count> names{
-        "Forward", "Back", "Left", "Right", "Jump", "Crouch", "Reset", "Record drills", "Walk", "Fire", "Reload"};
+        "Forward", "Back", "Left", "Right", "Jump", "Crouch", "Reset", "Record drills", "Walk", "Fire", "Reload", "Use / C4"};
     static constexpr int mouse_base = -100;
     static constexpr int wheel_up = -201;
     static constexpr int wheel_down = -202;
     static constexpr std::array<int, Count> defaults{
-        KEY_W, KEY_S, KEY_A, KEY_D, KEY_SPACE, KEY_LEFT_CONTROL, KEY_R, KEY_F5, KEY_LEFT_SHIFT, mouse_base - MOUSE_BUTTON_LEFT, KEY_E};
+        KEY_W, KEY_S, KEY_A, KEY_D, KEY_SPACE, KEY_LEFT_CONTROL, KEY_R, KEY_F5, KEY_LEFT_SHIFT, mouse_base - MOUSE_BUTTON_LEFT, KEY_E, KEY_F};
 
     std::array<int, Count> keys = defaults;
     float sensitivity = 1.0f;
@@ -33,7 +33,7 @@ struct Settings {
         for (std::size_t index = 0; index < saved.size(); ++index) {
             int key = 0;
             if (!(file >> key)) {
-                if ((index == Walk || index == Fire || index == Reload) && file.eof()) {
+                if ((index == Walk || index == Fire || index == Reload || index == Use) && file.eof()) {
                     for (std::size_t added = index; added < saved.size(); ++added) {
                         const auto assigned_end = saved.begin()+static_cast<std::ptrdiff_t>(added);
                         if (std::find(saved.begin(),assigned_end,saved[added]) == assigned_end) continue;
@@ -173,7 +173,7 @@ struct Settings {
     }
 
     void draw() const {
-        DrawRectangle(16, 16, 492, 514, {12, 18, 26, 248});
+        DrawRectangle(16, 16, 492, 548, {12, 18, 26, 248});
         DrawText("SETTINGS", 32, 29, 22, RAYWHITE);
         DrawText("Tab / Esc to close", 335, 32, 16, LIGHTGRAY);
         DrawText(TextFormat("Sensitivity: %.1fx", static_cast<double>(sensitivity)), 32, 75, 17, RAYWHITE);
@@ -186,7 +186,7 @@ struct Settings {
             DrawText(names[offset], 32, static_cast<int>(y) + 5, 17, RAYWHITE);
             draw_button(control(230, y, 258), index == rebinding ? "Press key, button, or scroll" : key_label(keys[offset]));
         }
-        DrawText("Click a binding to change it. Existing bindings swap.", 32, 497, 15, LIGHTGRAY);
+        DrawText("Click a binding to change it. Existing bindings swap.", 32, 531, 15, LIGHTGRAY);
     }
 };
 
