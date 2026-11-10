@@ -43,8 +43,32 @@ bool ray_hits_wall(const Ray ray, float& nearest) {
 }
 }
 
+bool export_default_drills(const MovementSimulator& simulation) {
+    std::error_code error;
+    const auto temp = std::filesystem::temp_directory_path(error);
+    if (error) {
+        std::fprintf(stderr, "Could not locate the temporary folder: %s\n", error.message().c_str());
+        return false;
+    }
+    const auto directory = temp / "CS2Clone";
+    std::filesystem::create_directories(directory, error);
+    if (error) {
+        std::fprintf(stderr, "Could not create the CSV folder: %s\n", error.message().c_str());
+        return false;
+    }
+    const auto path = directory / "movement-drills.csv";
+    const bool saved = feel_lab::record_drills(path, simulation);
+    const auto display = path.u8string();
+    std::fprintf(saved ? stdout : stderr, "%s %s\n",
+                 saved ? "Saved" : "Could not write", reinterpret_cast<const char*>(display.c_str()));
+    return saved;
+}
+
 int run_lab(int argc, char* argv[]) {
     MovementConfig cfg;
+    if (argc == 2 && std::string_view(argv[1]) == "--record-drills") {
+        return export_default_drills(MovementSimulator(cfg)) ? 0 : 1;
+    }
     if (argc == 3 && std::string_view(argv[1]) == "--record-drills") {
         if (feel_lab::record_drills(argv[2], MovementSimulator(cfg))) return 0;
         std::fprintf(stderr, "Could not write drill trace: %s\n", argv[2]);
@@ -62,7 +86,7 @@ int run_lab(int argc, char* argv[]) {
             map_path=argv[++index];
             validate=true;
         } else if (option == "--overview") overview=true;
-        else throw std::runtime_error("Usage: feel_lab [--map FILE] [--capture PNG] [--overview] | --validate-map FILE | --record-drills CSV");
+        else throw std::runtime_error("Usage: feel_lab [--map FILE] [--capture PNG] [--overview] | --validate-map FILE | --record-drills [CSV]");
     }
     if (map_path.empty()) {
         const auto automatic=std::filesystem::path(argv[0]).parent_path() / "mirage.map";
@@ -141,9 +165,9 @@ int run_lab(int argc, char* argv[]) {
         const bool accepting_input = !settings.visible && !was_settings;
         if (accepting_input && IsKeyPressed(settings.keys[feel_lab::Settings::Reset])) {reset_position(state); yaw=map.loaded()?map.spawn_yaw:0; pitch=0; hits=0; shots=0; total_time=0; accumulator=0; prev_jump=false; for(bool& t:targets)t=false;}
         if (accepting_input && IsKeyPressed(settings.keys[feel_lab::Settings::Drills])) {
-            drill_status = feel_lab::record_drills("movement-drills.csv", simulation)
-                ? "Saved movement-drills.csv"
-                : "Could not write movement-drills.csv";
+            drill_status = export_default_drills(simulation)
+                ? "Saved to temp folder / CS2Clone / movement-drills.csv"
+                : "CSV export failed. See the console for details.";
         }
         if (accepting_input && !paused) {
             const Vector2 mouse = GetMouseDelta();

@@ -41,7 +41,7 @@ The [Inferno analysis notes](../../docs/inferno-demo-movement.md) record the mea
 
 ## Playtest comparison
 
-In the Movement Feel Lab, press **F5** to record a fresh suite to `movement-drills.csv` in the current directory. The scene remains available for manual play. You can also record from PowerShell without opening a window.
+In the Movement Feel Lab, press **F5** to record a fresh suite to `CS2Clone/movement-drills.csv` in your temporary folder (`%TEMP%` on Windows). The scene remains available for manual play. You can also record from PowerShell without opening a window.
 
 ```powershell
 & ./feel_lab.exe --record-drills movement-drills.csv
