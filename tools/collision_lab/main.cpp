@@ -311,72 +311,94 @@ struct PairResult {
     JPH::RVec3 right;
 };
 
-void resolve_player_pair_symmetrically(VirtualCharacter& first, VirtualCharacter& second) {
-    const JPH::RVec3 first_position = first.position();
-    const JPH::RVec3 second_position = second.position();
-    const JPH::AABox first_bounds = first.world_bounds();
-    const JPH::AABox second_bounds = second.world_bounds();
+struct CapsuleProxy {
+    JPH::RVec3 position;
+    std::uint32_t stable_id = 0;
+    float radius = 0.0f;
+    float segment_min = 0.0f;
+    float segment_max = 0.0f;
+};
 
-    const float first_shape_radius = std::max({
-        static_cast<float>(first_bounds.mMax.GetX() - first_position.GetX()),
-        static_cast<float>(first_position.GetX() - first_bounds.mMin.GetX()),
-        static_cast<float>(first_bounds.mMax.GetZ() - first_position.GetZ()),
-        static_cast<float>(first_position.GetZ() - first_bounds.mMin.GetZ())});
-    const float second_shape_radius = std::max({
-        static_cast<float>(second_bounds.mMax.GetX() - second_position.GetX()),
-        static_cast<float>(second_position.GetX() - second_bounds.mMin.GetX()),
-        static_cast<float>(second_bounds.mMax.GetZ() - second_position.GetZ()),
-        static_cast<float>(second_position.GetZ() - second_bounds.mMin.GetZ())});
-    const float first_radius = first_shape_radius + first.character_padding();
-    const float second_radius = second_shape_radius + second.character_padding();
+CapsuleProxy make_capsule_proxy(const VirtualCharacter& character) {
+    const JPH::RVec3 position = character.position();
+    const JPH::AABox bounds = character.world_bounds();
+    const float shape_radius = std::max({
+        static_cast<float>(bounds.mMax.GetX() - position.GetX()),
+        static_cast<float>(position.GetX() - bounds.mMin.GetX()),
+        static_cast<float>(bounds.mMax.GetZ() - position.GetZ()),
+        static_cast<float>(position.GetZ() - bounds.mMin.GetZ())});
+    return CapsuleProxy{
+        position,
+        character.stable_id(),
+        shape_radius + character.character_padding(),
+        static_cast<float>(bounds.mMin.GetY()) + shape_radius,
+        static_cast<float>(bounds.mMax.GetY()) - shape_radius};
+}
 
-    const float first_segment_min = static_cast<float>(first_bounds.mMin.GetY()) + first_shape_radius;
-    const float first_segment_max = static_cast<float>(first_bounds.mMax.GetY()) - first_shape_radius;
-    const float second_segment_min = static_cast<float>(second_bounds.mMin.GetY()) + second_shape_radius;
-    const float second_segment_max = static_cast<float>(second_bounds.mMax.GetY()) - second_shape_radius;
-
+float measure_pair_penetration(const CapsuleProxy& first, const CapsuleProxy& second,
+                               JPH::Vec3* out_normal = nullptr) {
     float vertical_delta = 0.0f;
-    if (first_segment_max < second_segment_min) {
-        vertical_delta = second_segment_min - first_segment_max;
-    } else if (second_segment_max < first_segment_min) {
-        vertical_delta = second_segment_max - first_segment_min;
+    if (first.segment_max < second.segment_min) {
+        vertical_delta = second.segment_min - first.segment_max;
+    } else if (second.segment_max < first.segment_min) {
+        vertical_delta = second.segment_max - first.segment_min;
     }
 
-    const float dx = static_cast<float>(second_position.GetX() - first_position.GetX());
-    const float dz = static_cast<float>(second_position.GetZ() - first_position.GetZ());
+    const float dx = static_cast<float>(second.position.GetX() - first.position.GetX());
+    const float dz = static_cast<float>(second.position.GetZ() - first.position.GetZ());
     const float separation = std::sqrt(dx * dx + vertical_delta * vertical_delta + dz * dz);
-    const float penetration = first_radius + second_radius - separation;
-    if (penetration <= 0.0f) return;
+    const float penetration = first.radius + second.radius - separation;
 
-    float normal_x = 0.0f;
-    float normal_y = 0.0f;
-    float normal_z = 0.0f;
-    if (separation > 1.0e-6f) {
-        normal_x = dx / separation;
-        normal_y = vertical_delta / separation;
-        normal_z = dz / separation;
-    } else {
-        normal_x = first.stable_id() < second.stable_id() ? 1.0f : -1.0f;
+    if (out_normal != nullptr) {
+        if (separation > 1.0e-6f) {
+            *out_normal = JPH::Vec3(dx / separation, vertical_delta / separation, dz / separation);
+        } else {
+            *out_normal = JPH::Vec3(first.stable_id < second.stable_id ? 1.0f : -1.0f, 0.0f, 0.0f);
+        }
     }
+    return std::max(0.0f, penetration);
+}
+
+float resolve_player_pair_symmetrically(VirtualCharacter& first, VirtualCharacter& second) {
+    const CapsuleProxy first_capsule = make_capsule_proxy(first);
+    const CapsuleProxy second_capsule = make_capsule_proxy(second);
+    JPH::Vec3 normal;
+    const float penetration = measure_pair_penetration(first_capsule, second_capsule, &normal);
+    if (penetration <= 0.0f) return 0.0f;
 
     const float correction = 0.5f * penetration;
     first.set_position(JPH::RVec3(
-        first_position.GetX() - normal_x * correction,
-        first_position.GetY() - normal_y * correction,
-        first_position.GetZ() - normal_z * correction));
+        first_capsule.position.GetX() - normal.GetX() * correction,
+        first_capsule.position.GetY() - normal.GetY() * correction,
+        first_capsule.position.GetZ() - normal.GetZ() * correction));
     second.set_position(JPH::RVec3(
-        second_position.GetX() + normal_x * correction,
-        second_position.GetY() + normal_y * correction,
-        second_position.GetZ() + normal_z * correction));
+        second_capsule.position.GetX() + normal.GetX() * correction,
+        second_capsule.position.GetY() + normal.GetY() * correction,
+        second_capsule.position.GetZ() + normal.GetZ() * correction));
+    return penetration;
 }
 
+float measure_max_player_penetration(const std::vector<VirtualCharacter*>& players) {
+    float maximum_penetration = 0.0f;
+    for (std::size_t first = 0; first < players.size(); ++first) {
+        const CapsuleProxy first_capsule = make_capsule_proxy(*players[first]);
+        for (std::size_t second = first + 1; second < players.size(); ++second) {
+            maximum_penetration = std::max(
+                maximum_penetration,
+                measure_pair_penetration(first_capsule, make_capsule_proxy(*players[second])));
+        }
+    }
+    return maximum_penetration;
+}
 
-void resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players,
-                                      const bool project_world = false,
-                                      const int max_iterations = 32) {
+int resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players,
+                                     const bool project_world = false,
+                                     const int max_iterations = 32,
+                                     const float penetration_tolerance = 0.0009f) {
     std::sort(players.begin(), players.end(), [](const VirtualCharacter* a, const VirtualCharacter* b) {
         return a->stable_id() < b->stable_id();
     });
+    int iterations_used = 0;
     for (int iteration = 0; iteration < max_iterations; ++iteration) {
         for (std::size_t first = 0; first < players.size(); ++first) {
             for (std::size_t second = first + 1; second < players.size(); ++second) {
@@ -386,8 +408,12 @@ void resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players,
         if (project_world) {
             for (VirtualCharacter* player : players) player->project_world();
         }
+        iterations_used = iteration + 1;
+        if (measure_max_player_penetration(players) <= penetration_tolerance) break;
     }
+    return iterations_used;
 }
+
 
 struct PlayerGroupResult {
     std::vector<JPH::RVec3> positions;
@@ -609,6 +635,7 @@ struct PlayerWallGroupResult {
     std::vector<JPH::RVec3> positions;
     float minimum_separation = std::numeric_limits<float>::max();
     float wall_clearance = 0.0f;
+    int max_solver_passes = 0;
 };
 
 PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
@@ -629,6 +656,7 @@ PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
         players.push_back(owned_players.back().get());
     }
 
+    int max_solver_passes = 0;
     for (int tick = 0; tick < 128; ++tick) {
         if (reverse_order) {
             for (std::size_t i = players.size(); i-- > 0;)
@@ -637,10 +665,14 @@ PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
             for (VirtualCharacter* player : players)
                 player->step(JPH::Vec3(0.0f, 0.0f, 2.0f));
         }
-        if (!use_jolt_collision) resolve_player_set_symmetrically(players, true, 64);
+        if (!use_jolt_collision) {
+            max_solver_passes = std::max(
+                max_solver_passes, resolve_player_set_symmetrically(players, true, 64, 0.0009f));
+        }
     }
 
     PlayerWallGroupResult result;
+    result.max_solver_passes = max_solver_passes;
     result.positions.reserve(players.size());
     for (const VirtualCharacter* player : players) result.positions.push_back(player->position());
     for (std::size_t first = 0; first < result.positions.size(); ++first) {
@@ -676,7 +708,8 @@ void test_ten_player_corridor_wall() {
               << " order delta=" << jolt_max_order_error << '\n';
     std::cout << "10-player corridor symmetric: min separation=" << symmetric_forward.minimum_separation
               << " wall clearance=" << symmetric_forward.wall_clearance
-              << " order delta=" << symmetric_max_order_error << '\n';
+              << " order delta=" << symmetric_max_order_error
+              << " max solver passes=" << symmetric_forward.max_solver_passes << '\n';
     check(jolt_forward.minimum_separation > 0.63f && jolt_reverse.minimum_separation > 0.63f,
           "Jolt keeps ten players separated in a wall-ended corridor");
     check(jolt_forward.wall_clearance > -0.001f && jolt_reverse.wall_clearance > -0.001f,
