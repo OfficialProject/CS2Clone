@@ -22,6 +22,7 @@ struct MovementInput {
 struct MovementConfig {
     // World scale preserves the existing scene: 250 Source units = 5.8 scene units.
     static constexpr double source_unit = 5.8 / 250.0;
+    bool flat_ground{true};
     double fixed_dt{1.0 / 128.0};
     double ground_max_speed{5.8};
     double crouch_speed_multiplier{0.34};

@@ -159,7 +159,7 @@ MovementOutput MovementSimulator::step(MovementState& state, const MovementInput
         state.vertical_velocity -= config_.gravity * dt * 0.5;
         state.vertical_position += state.vertical_velocity * dt;
         state.vertical_velocity -= config_.gravity * dt * 0.5;
-        if (state.vertical_position <= 0.0 && state.vertical_velocity < 0.0) {
+        if (config_.flat_ground && state.vertical_position <= 0.0 && state.vertical_velocity < 0.0) {
             state.vertical_position = 0.0;
             state.vertical_velocity = 0.0;
             state.mode = MovementMode::Grounded;

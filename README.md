@@ -53,3 +53,5 @@ Local build (optional): `cmake -S . -B build -DCS2CLONE_BUILD_PLAYTEST=ON`, then
 ## Offline CS2 demo analysis
 
 [Demo movement analysis](tools/demo_movement/README.md) documents the Python parser, input audit, CSV/JSON outputs, plots and tests. It runs independently of the C++ engine.
+
+[Use an installed copy of Mirage](docs/mirage-playtest.md) to play the untextured map with the CS:GO-style movement model.

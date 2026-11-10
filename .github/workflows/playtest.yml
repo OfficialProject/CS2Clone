@@ -19,7 +19,9 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCS2CLONE_BUILD_PLAYTEST=ON
       - name: Build
-        run: cmake --build build --config Release --target feel_lab --parallel 4
+        run: cmake --build build --config Release --target feel_lab map_collision_tests --parallel 4
+      - name: Test map collision
+        run: ctest --test-dir build -C Release -R map_collision_tests --output-on-failure
       - name: Record drill traces
         shell: pwsh
         run: |
