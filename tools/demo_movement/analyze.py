@@ -307,6 +307,23 @@ def snapshot_velocities(frame, hz):
     frame["velocity_Y"] = vy.where(usable)
 
 
+def write_measurements(out, frame, hz, stop_speed):
+    out.mkdir(parents=True, exist_ok=False)
+    counts = Counter()
+    with ((out / "intervals.csv").open("w", newline="", encoding="utf-8") as intervals,
+          (out / "episodes.csv").open("w", newline="", encoding="utf-8") as episodes,
+          (out / "crossings.csv").open("w", newline="", encoding="utf-8") as crossings):
+        samples, stops, zeros = csv.writer(intervals), csv.DictWriter(episodes, EPISODE_HEADER), csv.writer(crossings)
+        samples.writerow(SAMPLE_HEADER)
+        stops.writeheader()
+        zeros.writerow(CROSSING_HEADER)
+        columns = list(frame.columns)
+        rows = (dict(zip(columns, row)) for row in frame.itertuples(index=False, name=None))
+        for _, player in groupby(rows, key=lambda row: row["steamid"]):
+            counts.update(measure(player, hz, stop_speed, samples, stops, zeros))
+    return counts
+
+
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("demo", type=Path)
@@ -326,19 +343,7 @@ def main():
     snapshot_velocities(frame, args.tick_rate)
     if not frame[["velocity_X", "velocity_Y"]].notna().all(axis=1).any():
         cli.error("no adjacent grounded position samples at the specified tick rate")
-    args.out.mkdir(parents=True, exist_ok=False)
-    counts = Counter()
-    with ((args.out / "intervals.csv").open("w", newline="", encoding="utf-8") as intervals,
-          (args.out / "episodes.csv").open("w", newline="", encoding="utf-8") as episodes,
-          (args.out / "crossings.csv").open("w", newline="", encoding="utf-8") as crossings):
-        samples, stops, zeros = csv.writer(intervals), csv.DictWriter(episodes, EPISODE_HEADER), csv.writer(crossings)
-        samples.writerow(SAMPLE_HEADER)
-        stops.writeheader()
-        zeros.writerow(CROSSING_HEADER)
-        columns = list(frame.columns)
-        rows = (dict(zip(columns, row)) for row in frame.itertuples(index=False, name=None))
-        for _, player in groupby(rows, key=lambda row: row["steamid"]):
-            counts.update(measure(player, args.tick_rate, args.stop_speed, samples, stops, zeros))
+    counts = write_measurements(args.out, frame, args.tick_rate, args.stop_speed)
     result = dict(schema_version=1, demo=args.demo.name, sha256=digest, header=header,
                   parser=version("demoparser2"), tick_rate=args.tick_rate,
                   stop_speed=args.stop_speed, player_ticks=len(frame),

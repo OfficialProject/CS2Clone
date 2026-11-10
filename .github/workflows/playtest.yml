@@ -2,6 +2,14 @@ name: Playtest build
 on:
   push:
     branches: [main, "playtest/**"]
+  pull_request:
+    paths:
+      - 'tools/feel_lab/**'
+      - 'tools/demo_movement/**'
+      - 'include/game/simulation/**'
+      - 'src/simulation/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/playtest.yml'
   workflow_dispatch:
 jobs:
   windows-playtest:
@@ -12,11 +20,20 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCS2CLONE_BUILD_PLAYTEST=ON
       - name: Build
         run: cmake --build build --config Release --target feel_lab --parallel 4
+      - name: Record drill traces
+        shell: pwsh
+        run: |
+          & build/Release/feel_lab.exe --record-drills movement-drills.csv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $rows = Import-Csv movement-drills.csv
+          if ($rows.Count -ne 603 -or ($rows | Group-Object drill,start_pct).Count -ne 9) {
+            throw 'Expected nine drills with 67 snapshots each'
+          }
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path playtest | Out-Null
-          Copy-Item build/Release/feel_lab.exe playtest/
+          Copy-Item build/Release/feel_lab.exe, movement-drills.csv playtest/
           Compress-Archive -Path playtest/* -DestinationPath CS2Clone-Feel-Lab-Windows.zip
       - uses: actions/upload-artifact@v4
         with:

@@ -38,3 +38,18 @@ The tick rate is explicit. demoparser2 derives its game-time field from net tick
 Demo distances use demo units. The clone uses prototype units, and the analysis stop threshold is independent of weapon accuracy.
 
 The [Inferno analysis notes](../../docs/inferno-demo-movement.md) record the measured HLTV results and proposed movement lab experiments. The JSON summary includes stop counts and medians by weapon and 50-unit/s starting-speed bands.
+
+## Playtest comparison
+
+In the Movement Feel Lab, press **F5** to record a fresh suite to `movement-drills.csv` in the current directory. The scene remains available for manual play. You can also record from PowerShell without opening a window.
+
+```powershell
+& ./feel_lab.exe --record-drills movement-drills.csv
+& .venv/Scripts/python.exe tools/demo_movement/compare_playtest.py movement-drills.csv `
+  --demo-summary demo-results/summary.json --weapon AK-47 --reference-top-speed 215 `
+  --out playtest-results
+```
+
+The recorder runs one rest-to-run drill and release and counter-strafe drills starting at 50%, 70%, 90% and 100% of the clone's top speed. The drills use the same movement simulator and 128 Hz fixed step as the scene, on a flat unobstructed surface with a fixed axis. Each stop drill starts with seeded velocity and includes synthetic pre-input position samples. The trace contains positions, raw simulator velocity, the held direction mask and clone top speed. The scorer derives velocity from positions on the shared 64 Hz observation grid.
+
+The example uses the Inferno AK-47 cohort's 95th-percentile observed speed across the 53,007 classified acceleration intervals (214.995 demo units/s, rounded to 215). This is a normalization anchor. The clone has no weapon-specific movement implementation in this drill. The scorer reuses the demo's stop threshold, compares matching start-speed bins, and carries over the demo episode and threshold-hit counts. Each clone drill is a single deterministic trial. A projected crossing and a sampled stop remain separate outcomes. A missing cohort or a censored stop has no timing value.

@@ -1,4 +1,4 @@
-#include "game/simulation/movement.hpp"
+#include "drills.hpp"
 #include "raylib.h"
 #include "raymath.h"
 #include <algorithm>
@@ -19,7 +19,6 @@ constexpr Vector3 target_positions[] = {{0,1.5f,-10},{-10,1.5f,-8},{9,1.5f,-8},{
 constexpr float player_radius = 0.28f;
 constexpr float standing_eye = 1.65f;
 constexpr float crouched_eye = 1.05f;
-constexpr float pi = 3.14159265358979323846f;
 bool intersects(const float x, const float z, const float height) {
     for (const Wall& w : walls) {
         const float dx = std::max(std::fabs(x - w.center.x) - w.size.x * 0.5f, 0.0f);
@@ -42,13 +41,22 @@ bool ray_hits_wall(const Ray ray, float& nearest) {
 }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    MovementConfig cfg;
+    MovementSimulator simulation(cfg);
+    if (argc != 1) {
+        if (argc == 3 && std::string_view(argv[1]) == "--record-drills") {
+            if (feel_lab::record_drills(argv[2], simulation)) return 0;
+            std::fprintf(stderr, "Could not write drill trace: %s\n", argv[2]);
+            return 1;
+        }
+        std::fprintf(stderr, "Usage: feel_lab [--record-drills OUTPUT.csv]\n");
+        return 2;
+    }
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(1280, 720, "CS2Clone | Movement Feel Lab");
     SetTargetFPS(240);
     DisableCursor();
-    MovementConfig cfg;
-    MovementSimulator simulation(cfg);
     MovementState state;
     state.position = {0, 0};
     float yaw = 0.0f, pitch = 0.0f;
@@ -57,10 +65,16 @@ int main() {
     double total_time = 0.0, accumulator = 0.0;
     bool paused = false, prev_jump = false;
     float last_hit_flash = 0.0f;
+    const char* drill_status = "F5: Record nine movement drills";
     while (!WindowShouldClose()) {
         const float frame_dt = std::min(GetFrameTime(), 0.1f);
         if (IsKeyPressed(KEY_ESCAPE)) {paused = !paused; if(paused) EnableCursor(); else DisableCursor();}
         if (IsKeyPressed(KEY_R)) {state = {}; yaw=0; pitch=0; hits=0; shots=0; total_time=0; for(bool& t:targets)t=false;}
+        if (IsKeyPressed(KEY_F5)) {
+            drill_status = feel_lab::record_drills("movement-drills.csv", simulation)
+                ? "Saved movement-drills.csv (F5 to rerun)"
+                : "Could not write movement-drills.csv";
+        }
         if (!paused) {
             const Vector2 mouse = GetMouseDelta();
             yaw += mouse.x * 0.0022f;
@@ -124,7 +138,7 @@ int main() {
         const Color cross=last_hit_flash>0?GREEN:WHITE;
         DrawLine(cx-11,cy,cx-4,cy,cross);DrawLine(cx+4,cy,cx+11,cy,cross);
         DrawLine(cx,cy-11,cx,cy-4,cross);DrawLine(cx,cy+4,cx,cy+11,cross);
-        DrawRectangle(12,12,480,142,{12,18,26,190});
+        DrawRectangle(12,12,480,169,{12,18,26,190});
         DrawText("MOVEMENT FEEL LAB  |  128 Hz simulation",24,20,19,RAYWHITE);
         DrawText(TextFormat("Speed: %.2f  |  Crouch: %.0f%%  |  %s",
             std::hypot(state.velocity.x,state.velocity.y),state.crouch_fraction*100,
@@ -132,6 +146,7 @@ int main() {
         DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24,78,18,RAYWHITE);
         DrawText("WASD move  |  Mouse aim  |  LMB fire  |  Space jump",24,106,16,RAYWHITE);
         DrawText("Ctrl/C crouch  |  R reset  |  Esc release mouse",24,127,16,RAYWHITE);
+        DrawText(drill_status,24,151,16,RAYWHITE);
         if(hits==5) {DrawRectangle(cx-225,cy-100,450,50,{18,30,23,220});DrawText("ALL TARGETS HIT - R TO RESET",cx-194,cy-86,23,GREEN);}
         if(paused) DrawText("PAUSED - ESC TO RESUME",cx-160,cy+75,23,YELLOW);
         DrawFPS(GetScreenWidth()-100,20);
