@@ -396,6 +396,8 @@ void test_player_player_collision() {
               << " right=" << symmetric_right_order_error << '\n';
     check(jolt_left_first_separation > 0.5f && jolt_right_first_separation > 0.5f,
           "Jolt simple character collision prevents capsules from passing through each other");
+    check(jolt_left_order_error < 0.05f && jolt_right_order_error < 0.05f,
+          "Jolt simple character collision is independent of update order");
     check(symmetric_separation > 0.5f,
           "symmetric player collision prevents two capsules from passing through each other");
     check(symmetric_left_order_error < 0.05f && symmetric_right_order_error < 0.05f,
