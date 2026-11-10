@@ -551,10 +551,14 @@ WallPairResult run_wall_pinned_pair(const bool use_jolt_collision, const bool ri
             right.step(JPH::Vec3(-2.0f, 0.0f, 0.0f));
         }
         if (!use_jolt_collision) {
-            resolve_player_pair_symmetrically(left, right);
             if (project_world) {
-                left.project_world();
-                right.project_world();
+                for (int iteration = 0; iteration < 8; ++iteration) {
+                    resolve_player_pair_symmetrically(left, right);
+                    left.project_world();
+                    right.project_world();
+                }
+            } else {
+                resolve_player_pair_symmetrically(left, right);
             }
         }
     }
@@ -588,7 +592,7 @@ void test_player_collision_against_wall() {
           "Jolt character collision keeps the wall-pinned player outside the wall");
     check(projected_forward.wall_clearance > -0.001f && projected_reverse.wall_clearance > -0.001f,
           "world projection prevents symmetric player resolution from pushing through a wall");
-    check(projected_forward.player_separation > 0.63f && projected_reverse.player_separation > 0.63f,
+    check(projected_forward.player_separation > 0.639f && projected_reverse.player_separation > 0.639f,
           "world-projected symmetric solver keeps players separated");
     check(projected_order_error < 0.001f,
           "world-projected wall collision is independent of update order");
