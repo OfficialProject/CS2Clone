@@ -1,8 +1,8 @@
 # Playtest Mirage locally
 
-The Movement Feel Lab automatically opens Mirage when `mirage.map` is beside `feel_lab.exe`. It starts at a T spawn from the map. Reset returns you to that spawn. Without a local map file, the executable opens the target range.
+The Movement Feel Lab automatically opens Mirage when `mirage.map` is beside `feel_lab.exe`. It starts at a T spawn from the map. Reset returns you to that spawn. Without a local or embedded map file, the executable opens the target range. In either arena, clear five targets to finish a timed practice round. Hold Fire to shoot, press E to reload by default, and use Reset to start over.
 
-The imported level uses the installed CS2 world and props with flat shading. The lab uses the compiled world collision and selected solid entity meshes for a swept player hull, walls, floors, slopes and steps. The CS:GO-style movement simulator still runs at 128 Hz. Interactive map entities such as ladders, moving props and breakables require further work. Bomb and buy volumes are excluded from collision.
+The imported level uses the installed CS2 world and props with flat shading. The lab uses the compiled world collision and selected solid entity meshes for a swept player hull, walls, floors, slopes and steps. The CS:GO-style movement simulator still runs at 128 Hz. The lab supports the imported ladder surfaces. Move toward a ladder to climb, back away to descend while attached, or press Jump to detach. Moving props and breakables still require implementation. Bomb and buy volumes are excluded from collision.
 
 ## Rebuild the map from an installed copy
 

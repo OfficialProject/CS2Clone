@@ -57,6 +57,8 @@ def triangles(path, mode):
         include = True
         if mode == "visual":
             include = not any(word in name.lower() for word in ("blocklight", "mesh_overlay"))
+        elif mode == "ladder":
+            include = "ladder" in tags
         elif mode == "entities":
             include = name in ("func_brush", "func_breakable", "prop_dynamic", "prop_dynamic_override")
         elif tags:
@@ -109,18 +111,21 @@ def convert(export, entities, output, vpk):
     world, excluded_world = triangles(export / "world_physics_physics.gltf", "collision")
     props, excluded_entities = triangles(export / "de_mirage_physics.gltf", "entities")
     collision = np.concatenate([world, props])
+    ladders, _ = triangles(export / "world_physics_physics.gltf", "ladder")
     locations = spawns(entities)
     first = next(item for item in locations if item["team"] == "terrorist")
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("xb") as handle:
-        handle.write(struct.pack("<8sII4f", b"CS2MAP01", len(visual), len(collision),
+        handle.write(struct.pack("<8sIII4f", b"CS2MAP02", len(visual), len(collision), len(ladders),
                                  *first["position"], first["yaw"]))
         handle.write(visual.tobytes())
         handle.write(collision.tobytes())
+        handle.write(ladders.tobytes())
     with vpk.open("rb") as handle:
         digest = hashlib.file_digest(handle, "sha256").hexdigest()
-    report = dict(format=1, input=vpk.name, sha256=digest, exporter="Source 2 Viewer 20.1",
+    report = dict(format=2, input=vpk.name, sha256=digest, exporter="Source 2 Viewer 20.1",
                   source_unit=SOURCE_UNIT, visual_triangles=len(visual), collision_triangles=len(collision),
+                  ladder_triangles=len(ladders),
                   spawns=locations, excluded_visual=excluded_visual,
                   excluded_world=excluded_world, excluded_entities=excluded_entities)
     output.with_suffix(".json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

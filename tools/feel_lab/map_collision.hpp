@@ -138,6 +138,14 @@ public:
         return hit;
     }
 
+    float shot_distance(Ray ray, float limit) const {
+        for (const auto& triangle : triangles) {
+            const auto hit = GetRayCollisionTriangle(ray,triangle.a,triangle.b,triangle.c);
+            if (hit.hit && hit.distance < limit) limit = hit.distance;
+        }
+        return limit;
+    }
+
     Motion move(Vector3 feet, Vector3 velocity, Vector3 delta, float height, bool was_grounded) const {
         auto result = slide(feet, velocity, delta, height);
         const auto distance = [feet](Vector3 point) {

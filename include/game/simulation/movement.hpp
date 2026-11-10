@@ -46,6 +46,8 @@ struct MovementState {
     double vertical_position{};
     double vertical_velocity{};
     double crouch_fraction{};
+    bool on_ladder{};
+    Vec2 ladder_normal{};
     MovementMode mode{MovementMode::Grounded};
     std::uint64_t tick{};
 };

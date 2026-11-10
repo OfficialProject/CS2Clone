@@ -17,7 +17,29 @@ constexpr Wall walls[] = {
     {{-4, 1.5f, -3}, {1, 3, 9}}, {{5, 1.5f, 2}, {1, 3, 9}},
     {{0, 1.5f, 7}, {8, 3, 1}}, {{-9, 1.5f, 5}, {5, 3, 1}}
 };
-constexpr Vector3 target_positions[] = {{0,1.5f,-10},{-10,1.5f,-8},{9,1.5f,-8},{9,1.5f,10},{-10,1.5f,10}};
+constexpr std::array<Vector3,5> range_targets{{{0,1.5f,-10},{-10,1.5f,-8},{9,1.5f,-8},{9,1.5f,10},{-10,1.5f,10}}};
+constexpr int magazine_size = 30;
+constexpr double shot_interval = 0.1;
+constexpr double reload_seconds = 2.5;
+
+std::array<Vector3,5> mirage_targets(const feel_lab::ImportedMap& map) {
+    constexpr float scale = static_cast<float>(MovementConfig::source_unit);
+    // Source entity coordinates for A ramp, A site, top mid, catwalk and B site.
+    constexpr std::array<Vector3,5> places{{
+        {512.5f,-1625,-206.719f}, {-662.5f,-1612.5f,-118.719f},
+        {475,-900,-107.024f}, {-125,-425,-121.294f}, {-2550,162.5f,-110.861f}}};
+    std::array<Vector3,5> targets{};
+    for (std::size_t i=0; i<places.size(); ++i) {
+        const auto p=places[i];
+        auto start=Vector3{p.y*scale,p.z*scale+1.0f,p.x*scale};
+        const auto floor=map.collision.sweep(start,{0,-4,0},0.01f);
+        if (floor.fraction<1 && floor.normal.y>=0.7f) start.y-=4*floor.fraction;
+        else start.y-=1.0f;
+        start.y+=1.25f;
+        targets[i]=start;
+    }
+    return targets;
+}
 constexpr float player_radius = 0.28f;
 constexpr float standing_eye = 1.65f;
 constexpr float crouched_eye = 1.05f;
@@ -125,7 +147,7 @@ int run_lab(int argc, char* argv[]) {
     InitWindow(1280, 720, "CS2Clone | Movement Feel Lab");
     SetTargetFPS(240);
     SetExitKey(KEY_NULL);
-    SetWindowMinSize(520, 512);
+    SetWindowMinSize(520, 546);
     feel_lab::Settings settings;
     settings.load();
     if (capture_path.empty()) DisableCursor();
@@ -138,7 +160,10 @@ int run_lab(int argc, char* argv[]) {
     reset_position(state);
     float yaw = map.loaded() ? map.spawn_yaw : 0.0f, pitch = 0.0f;
     int capture_frames = 0;
-    bool targets[5] = {};
+    const auto target_positions = map.loaded() ? mirage_targets(map) : range_targets;
+    std::array<bool,5> targets{};
+    int ammunition = magazine_size;
+    double next_shot = 0, reload_finish = 0;
     int hits = 0, shots = 0;
     double total_time = 0.0, accumulator = 0.0;
     bool paused = false, pending_jump = false;
@@ -164,7 +189,7 @@ int run_lab(int argc, char* argv[]) {
         }
         if (settings.visible && was_settings && !IsKeyPressed(KEY_ESCAPE)) settings.update();
         const bool accepting_input = !settings.visible && !was_settings;
-        if (accepting_input && settings.pressed(feel_lab::Settings::Reset)) {reset_position(state); yaw=map.loaded()?map.spawn_yaw:0; pitch=0; hits=0; shots=0; total_time=0; accumulator=0; pending_jump=false; wheel_pulses.fill(false); for(bool& t:targets)t=false;}
+        if (accepting_input && settings.pressed(feel_lab::Settings::Reset)) {reset_position(state); yaw=map.loaded()?map.spawn_yaw:0; pitch=0; hits=0; shots=0; total_time=0; accumulator=0; pending_jump=false; wheel_pulses.fill(false); targets.fill(false); ammunition=magazine_size; next_shot=0; reload_finish=0;}
         if (accepting_input && settings.pressed(feel_lab::Settings::Drills)) {
             drill_status = export_default_drills(simulation)
                 ? "Saved to temp folder / CS2Clone / movement-drills.csv"
@@ -220,25 +245,36 @@ int run_lab(int argc, char* argv[]) {
                 }
                 if (map.loaded() && state.vertical_position < map.lowest-10) reset_position(state);
                 accumulator -= cfg.fixed_dt;
-                total_time += cfg.fixed_dt;
+                if (hits < static_cast<int>(targets.size())) total_time += cfg.fixed_dt;
                 pending_jump = false;
                 wheel_pulses.fill(false);
             }
             const float eye = map.loaded() ? (64.0f-18.0f*static_cast<float>(state.crouch_fraction))*static_cast<float>(MovementConfig::source_unit) : standing_eye + (crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
             const Vector3 pos = {static_cast<float>(state.position.x), eye+static_cast<float>(state.vertical_position), static_cast<float>(state.position.y)};
             const Vector3 dir = {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)};
-            if (!map.loaded() && settings.pressed(Controls::Fire)) {
+            if (reload_finish > 0 && total_time >= reload_finish) {
+                ammunition = magazine_size;
+                reload_finish = 0;
+            }
+            if (settings.pressed(Controls::Reload) && ammunition < magazine_size && reload_finish == 0)
+                reload_finish = total_time + reload_seconds;
+            if ((settings.pressed(Controls::Fire) || settings.down(Controls::Fire)) &&
+                ammunition > 0 && reload_finish == 0 && total_time >= next_shot &&
+                hits < static_cast<int>(targets.size())) {
+                next_shot = total_time + shot_interval;
+                --ammunition;
                 ++shots;
                 const Ray ray={pos,dir};
                 float nearest=1000;
-                ray_hits_wall(ray,nearest);
-                int hit=-1;
-                for (int i=0;i<5;i++) {
+                if (map.loaded()) nearest = map.collision.shot_distance(ray,nearest);
+                else ray_hits_wall(ray,nearest);
+                std::size_t hit=targets.size();
+                for (std::size_t i=0;i<targets.size();++i) {
                     if (targets[i]) continue;
                     const RayCollision c=GetRayCollisionSphere(ray,target_positions[i],0.45f);
                     if(c.hit && c.distance < nearest) {nearest=c.distance;hit=i;}
                 }
-                if(hit>=0) {targets[hit]=true;++hits;last_hit_flash=0.18f;}
+                if(hit<targets.size()) {targets[hit]=true;++hits;last_hit_flash=0.18f;}
             }
         }
         last_hit_flash=std::max(0.0f,last_hit_flash-frame_dt);
@@ -255,7 +291,11 @@ int run_lab(int argc, char* argv[]) {
             DrawPlane({0,-0.01f,0},{30,30},{155,157,151,255});
             DrawGrid(30,1);
             for(const Wall& w:walls) {DrawCubeV(w.center,w.size,{93,104,117,255});DrawCubeWiresV(w.center,w.size,{50,55,63,255});}
-            for(int i=0;i<5;i++) if(!targets[i]) {DrawSphere(target_positions[i],0.45f,{230,85,55,255});DrawSphereWires(target_positions[i],0.45f,8,12,{80,35,20,255});}
+        }
+        for (std::size_t i=0;i<targets.size();++i) {
+            if (targets[i]) continue;
+            DrawSphere(target_positions[i],0.45f,{230,85,55,255});
+            DrawSphereWires(target_positions[i],0.45f,8,12,{80,35,20,255});
         }
         EndMode3D();
         const int cx=GetScreenWidth()/2,cy=GetScreenHeight()/2;
@@ -266,11 +306,12 @@ int run_lab(int argc, char* argv[]) {
         DrawText(map.loaded()?"MIRAGE  |  128 Hz movement lab":"MOVEMENT FEEL LAB  |  128 Hz simulation",24,20,19,RAYWHITE);
         DrawText(TextFormat("Speed: %.2f  |  Crouch: %.0f%%  |  %s",
             std::hypot(state.velocity.x,state.velocity.y),state.crouch_fraction*100,
-            state.mode==MovementMode::Grounded?"GROUND":"AIR"),24,51,18,RAYWHITE);
-        if (map.loaded()) DrawText(TextFormat("Mirage geometry  |  %s returns to T spawn",feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reset])),24,78,18,RAYWHITE);
-        else DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24,78,18,RAYWHITE);
-        DrawText(map.loaded()?"Tab settings  |  Mouse aim":"Tab settings  |  Mouse aim",24,106,16,RAYWHITE);
-        DrawText("Esc pause / resume",24,127,16,RAYWHITE);
+            state.on_ladder?"LADDER":state.mode==MovementMode::Grounded?"GROUND":"AIR"),24,51,18,RAYWHITE);
+        DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24,78,18,RAYWHITE);
+        DrawText(reload_finish > 0 ? "Reloading..." : TextFormat("Ammo: %d/%d  |  Tab settings",ammunition,magazine_size),
+                 24,106,16,RAYWHITE);
+        DrawText(TextFormat("%s reload  |  %s reset",feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reload]),
+                            feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reset])),24,127,16,RAYWHITE);
         DrawText(TextFormat("%s: %s", feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Drills]), drill_status),24,151,16,RAYWHITE);
         if(hits==5) {DrawRectangle(cx-225,cy-100,450,50,{18,30,23,220});DrawText("ALL TARGETS HIT",cx-194,cy-86,23,GREEN);}
         if(paused) DrawText("PAUSED - ESC TO RESUME",cx-160,cy+75,23,YELLOW);
