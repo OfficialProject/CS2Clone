@@ -42,7 +42,7 @@ def transform(node):
     return result
 
 
-def triangles(path, mode):
+def triangles(path, mode, disabled_brush_origins=None):
     document = json.loads(path.read_text(encoding="utf-8"))
     buffers = [(path.parent / unquote(item["uri"])).read_bytes() for item in document.get("buffers", [])]
     pieces = []
@@ -56,11 +56,14 @@ def triangles(path, mode):
         tags = set(extras.get("InteractAs", []))
         include = True
         if mode == "visual":
-            include = not any(word in name.lower() for word in ("blocklight", "mesh_overlay"))
+            include = not any(word in name.lower() for word in ("blocklight", "mesh_overlay", "retake_asite_", "retake_bsite_"))
         elif mode == "ladder":
             include = "ladder" in tags
         elif mode == "entities":
             include = name in ("func_brush", "func_breakable", "prop_dynamic", "prop_dynamic_override")
+            if name == "func_brush" and disabled_brush_origins is not None:
+                matches = np.isclose(disabled_brush_origins, matrix[:3, 3], rtol=0, atol=0.0005)
+                include = not np.any(matches.all(axis=1))
         elif tags:
             include = bool(tags & {"playerclip", "ladder", "window", "passbullets"})
         if "mesh" in node and include:
@@ -90,6 +93,20 @@ def triangles(path, mode):
     return result, excluded
 
 
+def disabled_brushes(path):
+    origins = []
+    for entity in re.split(r"====\d+====", path.read_text(encoding="utf-8-sig")):
+        if not re.search(r'^classname\s+"func_brush"', entity, re.MULTILINE):
+            continue
+        if not re.search(r'^startdisabled\s+true|^solidity\s+1\s*$', entity, re.MULTILINE):
+            continue
+        origin = re.search(r"^origin\s+\[([^]]+)\]", entity, re.MULTILINE)
+        if origin:
+            x, y, z = (float(value) for value in origin[1].split(","))
+            origins.append([y*0.0254, z*0.0254, x*0.0254])
+    return np.asarray(origins, dtype=float).reshape(-1, 3)
+
+
 def spawns(path):
     result = []
     for entity in re.split(r"====\d+====", path.read_text(encoding="utf-8-sig")):
@@ -109,7 +126,7 @@ def spawns(path):
 def convert(export, entities, output, vpk):
     visual, excluded_visual = triangles(export / "de_mirage.gltf", "visual")
     world, excluded_world = triangles(export / "world_physics_physics.gltf", "collision")
-    props, excluded_entities = triangles(export / "de_mirage_physics.gltf", "entities")
+    props, excluded_entities = triangles(export / "de_mirage_physics.gltf", "entities", disabled_brushes(entities))
     collision = np.concatenate([world, props])
     ladders, _ = triangles(export / "world_physics_physics.gltf", "ladder")
     locations = spawns(entities)

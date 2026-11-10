@@ -1,6 +1,6 @@
 #pragma once
 
-#include "raylib.h"
+#include "ui.hpp"
 
 #include <algorithm>
 #include <array>
@@ -24,6 +24,8 @@ struct Settings {
     float sensitivity = 1.0f;
     int rebinding = -1;
     bool visible = false;
+    enum class Category { Display, Mouse, Bindings };
+    Category category = Category::Display;
 
     void load() {
         std::ifstream file("feel-lab-settings.txt");
@@ -63,16 +65,6 @@ struct Settings {
         file << sensitivity;
         for (const auto key : keys) file << ' ' << key;
         file << '\n';
-    }
-
-    static Rectangle control(float x, float y, float width) {
-        return {x, y, width, 28};
-    }
-
-    static void draw_button(Rectangle bounds, const char* label) {
-        DrawRectangleRec(bounds, CheckCollisionPointRec(GetMousePosition(), bounds)
-            ? Color{64, 91, 123, 255} : Color{42, 59, 78, 255});
-        DrawText(label, static_cast<int>(bounds.x) + 8, static_cast<int>(bounds.y) + 5, 17, RAYWHITE);
     }
 
     static bool is_mouse_button(int binding) {
@@ -122,27 +114,6 @@ struct Settings {
             return;
         }
 
-        if (!IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) return;
-        const auto clicked = [](Rectangle bounds) {
-            return CheckCollisionPointRec(GetMousePosition(), bounds);
-        };
-        if (clicked(control(230, 69, 42))) {
-            sensitivity = std::max(0.1f, sensitivity - 0.1f);
-            save();
-        } else if (clicked(control(279, 69, 42))) {
-            sensitivity = std::min(5.0f, sensitivity + 0.1f);
-            save();
-        } else if (clicked(control(340, 69, 148))) {
-            ToggleFullscreen();
-        } else {
-            for (int index = 0; index < Count; ++index) {
-                if (clicked(control(230, 112.0f + 34.0f * static_cast<float>(index), 258))) {
-                    while (GetKeyPressed() != 0) {}
-                    rebinding = index;
-                    break;
-                }
-            }
-        }
     }
 
     static const char* key_label(int key) {
@@ -172,21 +143,74 @@ struct Settings {
         }
     }
 
-    void draw() const {
-        DrawRectangle(16, 16, 492, 548, {12, 18, 26, 248});
-        DrawText("SETTINGS", 32, 29, 22, RAYWHITE);
-        DrawText("Tab / Esc to close", 335, 32, 16, LIGHTGRAY);
-        DrawText(TextFormat("Sensitivity: %.1fx", static_cast<double>(sensitivity)), 32, 75, 17, RAYWHITE);
-        draw_button(control(230, 69, 42), "-");
-        draw_button(control(279, 69, 42), "+");
-        draw_button(control(340, 69, 148), IsWindowFullscreen() ? "Windowed" : "Fullscreen");
-        for (int index = 0; index < Count; ++index) {
-            const float y = 112.0f + 34.0f * static_cast<float>(index);
-            const auto offset = static_cast<std::size_t>(index);
-            DrawText(names[offset], 32, static_cast<int>(y) + 5, 17, RAYWHITE);
-            draw_button(control(230, y, 258), index == rebinding ? "Press key, button, or scroll" : key_label(keys[offset]));
+    void draw(bool interactive) {
+        const int width=GetScreenWidth();
+        const int height=GetScreenHeight();
+        DrawRectangle(0,0,width,height,{9,15,21,242});
+        ui::bar();
+        ui::label("SETTINGS",169,21,21,ui::accent);
+        if (ui::button(width-105,13,89,38,"Close") && interactive) {
+            visible=false;
+            rebinding=-1;
         }
-        DrawText("Click a binding to change it. Existing bindings swap.", 32, 531, 15, LIGHTGRAY);
+
+        const int panel_width=std::min(width-36,930);
+        const int left=(width-panel_width)/2;
+        const int tab_width=(panel_width-16)/3;
+        const auto tab = [&](int column, Category item, const char* label) {
+            if (ui::button(left+column*(tab_width+8),88,tab_width,40,label,category==item) && interactive) {
+                category=item;
+                rebinding=-1;
+            }
+        };
+        tab(0,Category::Display,"Display");
+        tab(1,Category::Mouse,"Mouse");
+        tab(2,Category::Bindings,"Bindings");
+        DrawRectangle(left,146,panel_width,height-164,ui::panel);
+
+        if (category==Category::Display) {
+            ui::label("Screen mode",left+20,174,20);
+            if (ui::button(left+panel_width-176,161,156,39,
+                           IsWindowFullscreen()?"Fullscreen":"Windowed") && interactive) ToggleFullscreen();
+        } else if (category==Category::Mouse) {
+            ui::label("Mouse sensitivity",left+20,174,20);
+            const int slider_x=left+panel_width/2;
+            const int slider_width=panel_width/2-88;
+            const Rectangle slider{static_cast<float>(slider_x),165,static_cast<float>(slider_width),39};
+            if (interactive && ui::hovered(slider) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                const float ratio=std::clamp((GetMousePosition().x-slider.x)/slider.width,0.0f,1.0f);
+                const float value=std::round((0.1f+4.9f*ratio)*10)/10;
+                if (value!=sensitivity) {
+                    sensitivity=value;
+                    save();
+                }
+            }
+            DrawRectangle(slider_x,183,slider_width,4,ui::line);
+            const int knob=slider_x+static_cast<int>((sensitivity-0.1f)/4.9f*static_cast<float>(slider_width));
+            DrawCircle(knob,185,7,ui::accent);
+            ui::label(TextFormat("%.1fx",static_cast<double>(sensitivity)),left+panel_width-64,173,18);
+        } else {
+            const bool two_columns=panel_width>=740;
+            const int rows=two_columns?(Count+1)/2:Count;
+            const int column_width=two_columns?(panel_width-24)/2:panel_width-24;
+            const int row_height=std::min(43,(height-192)/rows);
+            for (int index=0; index<Count; ++index) {
+                const int x=left+12+column_width*(index/rows);
+                const int y=158+(index%rows)*row_height;
+                const auto offset=static_cast<std::size_t>(index);
+                ui::label(names[offset],x+8,y+5,17);
+                const int binding_width=std::min(225,column_width/2);
+                const auto* label=index==rebinding?"Press input...":key_label(keys[offset]);
+                if (ui::button(x+column_width-binding_width-8,y,binding_width,row_height-3,label,
+                               index==rebinding) && interactive && rebinding<0) {
+                    while (GetKeyPressed()!=0) {}
+                    rebinding=index;
+                }
+                DrawRectangle(x+8,y+row_height-1,column_width-16,1,ui::line);
+            }
+            ui::label(rebinding>=0?"Press a key, mouse button or scroll. Esc cancels.":"Click a binding to change it.",
+                      left+20,height-46,15,ui::muted);
+        }
     }
 };
 

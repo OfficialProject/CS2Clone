@@ -166,6 +166,7 @@ int run_lab(int argc, char* argv[]) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | (capture_path.empty() ? 0u : FLAG_WINDOW_HIDDEN));
     InitWindow(1280, 720, "CS2Clone | Movement Feel Lab");
     SetTargetFPS(240);
+    feel_lab::ui::load();
     SetExitKey(KEY_NULL);
     SetWindowMinSize(520, 580);
     feel_lab::Settings settings;
@@ -222,6 +223,7 @@ int run_lab(int argc, char* argv[]) {
     while (!WindowShouldClose()) {
         const float frame_dt = std::min(GetFrameTime(), 0.1f);
         const bool was_settings = settings.visible;
+        const bool was_rebinding = settings.rebinding >= 0;
         const bool cursor_was_free = was_settings || frontend.menu();
         if (IsKeyPressed(KEY_TAB)) {
             settings.visible = !settings.visible;
@@ -431,7 +433,7 @@ int run_lab(int argc, char* argv[]) {
             DrawFPS(GetScreenWidth()-100,20);
         }
         const auto action=frontend.draw(settings,map.loaded(),round_won,result_text.c_str());
-        if (settings.visible) settings.draw();
+        if (settings.visible) settings.draw(was_settings && !was_rebinding);
         EndDrawing();
         if (action==Frontend::Action::Exit) break;
         if (action==Frontend::Action::Start) start_round();
@@ -445,6 +447,7 @@ int run_lab(int argc, char* argv[]) {
             UnloadImage(frame);
             if (!saved) {
                 map.unload();
+                feel_lab::ui::unload();
                 CloseWindow();
                 return 1;
             }
@@ -452,6 +455,7 @@ int run_lab(int argc, char* argv[]) {
         }
     }
     map.unload();
+    feel_lab::ui::unload();
     CloseWindow();
     return 0;
 }

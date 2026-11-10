@@ -2,6 +2,7 @@
 
 #include "bomb_round.hpp"
 #include "settings.hpp"
+#include "ui.hpp"
 
 namespace feel_lab {
 
@@ -14,50 +15,97 @@ struct Frontend {
 
     bool menu() const { return screen != Screen::Match; }
 
+    const char* mode_name() const {
+        switch (selected) {
+        case GameMode::Practice: return "Target Practice";
+        case GameMode::Plant: return "Plant the Bomb";
+        case GameMode::Defuse: return "Defuse the Bomb";
+        }
+        return "";
+    }
+
+    const char* mode_description() const {
+        switch (selected) {
+        case GameMode::Practice: return "Clear five targets against the clock.";
+        case GameMode::Plant: return "Reach A or B and plant the C4.";
+        case GameMode::Defuse: return "Reach A and defuse before the fuse ends.";
+        }
+        return "";
+    }
+
     Action draw(Settings& settings, bool mirage, bool won, const char* result) {
         if (!menu() || settings.visible) return Action::None;
-        const int x = (GetScreenWidth()-480)/2;
-        const int y = (GetScreenHeight()-450)/2;
-        DrawRectangle(0,0,GetScreenWidth(),GetScreenHeight(),{6,11,18,208});
-        DrawRectangle(x,y,480,450,{17,25,37,255});
-        DrawRectangle(x,y,480,3,{68,175,159,255});
-        const bool clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-        const auto button = [&](int row, const char* label) {
-            const Rectangle bounds{static_cast<float>(x+28),static_cast<float>(y+row),424,39};
-            Settings::draw_button(bounds,label);
-            return clicked && CheckCollisionPointRec(GetMousePosition(),bounds);
-        };
-        if (screen == Screen::Home) {
-            DrawText("CS2CLONE",x+28,y+38,42,RAYWHITE);
-            DrawText("Movement and bomb practice",x+30,y+96,19,LIGHTGRAY);
-            if (button(158,"Open lobby")) screen = Screen::Lobby;
-            if (button(210,"Settings")) settings.visible = true;
-            if (button(262,"Quit")) return Action::Exit;
-        } else if (screen == Screen::Lobby) {
-            DrawText("LOCAL LOBBY",x+28,y+24,30,RAYWHITE);
-            DrawText(mirage ? "MIRAGE   /   1 PLAYER" : "TARGET RANGE   /   1 PLAYER",x+28,y+68,17,LIGHTGRAY);
-            if (button(106,selected == GameMode::Practice ? "> Target practice" : "Target practice"))
-                selected = GameMode::Practice;
-            if (mirage && button(153,selected == GameMode::Plant ? "> Plant the bomb   /   T" : "Plant the bomb   /   T"))
-                selected = GameMode::Plant;
-            if (mirage && button(200,selected == GameMode::Defuse ? "> Defuse the bomb   /   CT" : "Defuse the bomb   /   CT"))
-                selected = GameMode::Defuse;
-            if (button(260,"Start round")) return Action::Start;
-            if (button(307,"Settings")) settings.visible = true;
-            if (button(354,"Back")) screen = Screen::Home;
-        } else if (screen == Screen::Pause) {
-            DrawText("PAUSED",x+28,y+32,34,RAYWHITE);
-            if (button(105,"Resume")) return Action::Resume;
-            if (button(154,"Restart round")) return Action::Start;
-            if (button(203,"Settings")) settings.visible = true;
-            if (button(252,"Return to lobby")) screen = Screen::Lobby;
-            if (button(301,"Quit")) return Action::Exit;
+        const int width=GetScreenWidth();
+        const int height=GetScreenHeight();
+        const auto current=screen;
+        const bool selection=current==Screen::Lobby;
+        if (!selection) DrawRectangle(0,64,width,height-64,{8,13,18,95});
+        ui::bar();
+        if (current==Screen::Home || current==Screen::Lobby) {
+            if (ui::button(168,13,82,38,"Home",current==Screen::Home)) screen=Screen::Home;
+            if (ui::button(258,13,82,38,"Play",selection)) screen=Screen::Lobby;
+            if (ui::button(348,13,92,38,"Settings")) settings.visible=true;
+            if (ui::button(width-75,13,59,38,"Quit")) return Action::Exit;
+        }
+
+        if (current==Screen::Home) {
+            const int left=std::max(24,width/18);
+            const int top=height/2-98;
+            DrawRectangleGradientH(0,64,width,height-64,{6,11,16,230},{6,11,16,10});
+            ui::label("CS2CLONE",left,top,64);
+            ui::label("Mirage practice",left,top+83,25,ui::muted);
+            if (ui::button(left,top+138,180,46,"Open lobby",false,true)) screen=Screen::Lobby;
+        } else if (selection) {
+            const int margin=std::clamp(width/22,18,64);
+            const int content=width-2*margin;
+            const int map_width=content*58/100;
+            const int details_x=margin+map_width+14;
+            const int details_width=width-margin-details_x;
+            const int card_top=202;
+            const int card_height=height-card_top-92;
+            constexpr Color backdrop{8,13,18,210};
+            DrawRectangle(0,64,width,card_top-64,backdrop);
+            DrawRectangle(0,card_top,margin,card_height,backdrop);
+            DrawRectangle(margin+map_width,card_top,width-margin-map_width,card_height,backdrop);
+            DrawRectangle(0,card_top+card_height,width,height-card_top-card_height,backdrop);
+            ui::label("LOCAL LOBBY",margin,82,29);
+            const int tab_width=(content-16)/3;
+            if (ui::button(margin,132,tab_width,40,"Target Practice",selected==GameMode::Practice))
+                selected=GameMode::Practice;
+            if (mirage && ui::button(margin+tab_width+8,132,tab_width,40,"Plant the Bomb",selected==GameMode::Plant))
+                selected=GameMode::Plant;
+            if (mirage && ui::button(margin+2*(tab_width+8),132,tab_width,40,"Defuse the Bomb",selected==GameMode::Defuse))
+                selected=GameMode::Defuse;
+
+            DrawRectangle(margin,card_top,map_width,card_height,{15,25,33,70});
+            DrawRectangleGradientV(margin,card_top+card_height-102,map_width,102,{10,17,24,25},{10,17,24,245});
+            DrawRectangleLinesEx({static_cast<float>(margin),static_cast<float>(card_top),
+                                  static_cast<float>(map_width),static_cast<float>(card_height)},2,ui::accent);
+            ui::label(mirage?"MIRAGE":"TARGET RANGE",margin+18,card_top+card_height-57,34);
+
+            DrawRectangle(details_x,card_top,details_width,card_height,ui::panel);
+            ui::label("SESSION",details_x+16,card_top+20,15,ui::muted);
+            ui::label("Local  /  1 player",details_x+16,card_top+49,19);
+            DrawRectangle(details_x+16,card_top+87,details_width-32,1,ui::line);
+            ui::label(mode_name(),details_x+16,card_top+106,22);
+            if (details_width>=340) ui::label(mode_description(),details_x+16,card_top+147,16,ui::muted);
+            DrawRectangle(0,height-72,width,72,{17,23,29,255});
+            ui::label(mirage?"Mirage":"Target Range",margin,height-49,19,ui::muted);
+            if (ui::button(width-margin-146,height-58,146,44,"GO",false,true)) return Action::Start;
         } else {
-            DrawText(won ? "ROUND WON" : "ROUND LOST",x+28,y+35,36,won?GREEN:ORANGE);
-            DrawText(result,x+28,y+94,19,LIGHTGRAY);
-            if (button(158,"Play again")) return Action::Start;
-            if (button(210,"Return to lobby")) screen = Screen::Lobby;
-            if (button(262,"Settings")) settings.visible = true;
+            const int left=(width-428)/2;
+            const int top=(height-340)/2;
+            DrawRectangle(left,top,428,340,ui::panel);
+            DrawRectangle(left,top,428,2,ui::accent);
+            const bool paused=current==Screen::Pause;
+            ui::label(paused?"PAUSED":won?"ROUND WON":"ROUND LOST",left+24,top+25,34,
+                      paused?ui::text:won?ui::accent:ORANGE);
+            ui::label(paused?mode_name():result,left+24,top+77,18,ui::muted);
+            if (ui::button(left+24,top+125,380,41,paused?"Resume":"Play again",false,true))
+                return paused?Action::Resume:Action::Start;
+            if (paused && ui::button(left+24,top+174,380,41,"Restart round")) return Action::Start;
+            if (ui::button(left+24,top+223,380,41,"Settings")) settings.visible=true;
+            if (ui::button(left+24,top+272,380,41,"Return to lobby")) screen=Screen::Lobby;
         }
         return Action::None;
     }
