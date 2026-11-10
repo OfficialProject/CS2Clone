@@ -355,32 +355,35 @@ void resolve_player_pair_symmetrically(VirtualCharacter& first, VirtualCharacter
         second_position.GetZ() + normal_z * correction));
 }
 
-PairResult run_player_pair(const bool use_jolt_collision, const bool right_first) {
+PairResult run_player_pair(const bool use_jolt_collision, const bool right_first,
+                           const JPH::Vec3& left_input, const JPH::Vec3& right_input) {
     JoltWorld world;
     world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
     VirtualCharacter left(world, JPH::RVec3(-1.0f, 0.0f, 0.0f), false, 1, use_jolt_collision);
     VirtualCharacter right(world, JPH::RVec3(1.0f, 0.0f, 0.0f), false, 2, use_jolt_collision);
     for (int i = 0; i < 128; ++i) {
         if (right_first) {
-            right.step(JPH::Vec3(-2.0f, 0.0f, 0.0f));
-            left.step(JPH::Vec3(2.0f, 0.0f, 0.0f));
+            right.step(right_input);
+            left.step(left_input);
         } else {
-            left.step(JPH::Vec3(2.0f, 0.0f, 0.0f));
-            right.step(JPH::Vec3(-2.0f, 0.0f, 0.0f));
+            left.step(left_input);
+            right.step(right_input);
         }
         if (!use_jolt_collision) resolve_player_pair_symmetrically(left, right);
     }
     return PairResult{left.position(), right.position()};
 }
 
-void test_player_player_collision() {
-    const PairResult jolt_left_first = run_player_pair(true, false);
-    const PairResult jolt_right_first = run_player_pair(true, true);
+void test_player_pair_scenario(const std::string_view label,
+                               const JPH::Vec3& left_input,
+                               const JPH::Vec3& right_input) {
+    const PairResult jolt_left_first = run_player_pair(true, false, left_input, right_input);
+    const PairResult jolt_right_first = run_player_pair(true, true, left_input, right_input);
     const float jolt_left_order_error = distance(jolt_left_first.left, jolt_right_first.left);
     const float jolt_right_order_error = distance(jolt_left_first.right, jolt_right_first.right);
 
-    const PairResult symmetric_left_first = run_player_pair(false, false);
-    const PairResult symmetric_right_first = run_player_pair(false, true);
+    const PairResult symmetric_left_first = run_player_pair(false, false, left_input, right_input);
+    const PairResult symmetric_right_first = run_player_pair(false, true, left_input, right_input);
     const float symmetric_left_order_error = distance(symmetric_left_first.left, symmetric_right_first.left);
     const float symmetric_right_order_error = distance(symmetric_left_first.right, symmetric_right_first.right);
     const float symmetric_separation = static_cast<float>(
@@ -390,10 +393,10 @@ void test_player_player_collision() {
     const float jolt_right_first_separation = static_cast<float>(
         jolt_right_first.right.GetX() - jolt_right_first.left.GetX());
 
-    std::cout << "CharacterVirtual simple pair order delta: left=" << jolt_left_order_error
-              << " right=" << jolt_right_order_error << '\n';
-    std::cout << "Symmetric pair solver order delta: left=" << symmetric_left_order_error
-              << " right=" << symmetric_right_order_error << '\n';
+    std::cout << label << " / CharacterVirtual simple pair order delta: left=" << jolt_left_order_error
+              << " right=" << jolt_right_order_error << '\\n';
+    std::cout << label << " / symmetric pair solver order delta: left=" << symmetric_left_order_error
+              << " right=" << symmetric_right_order_error << '\\n';
     check(jolt_left_first_separation > 0.5f && jolt_right_first_separation > 0.5f,
           "Jolt simple character collision prevents capsules from passing through each other");
     check(jolt_left_order_error < 0.05f && jolt_right_order_error < 0.05f,
@@ -402,6 +405,18 @@ void test_player_player_collision() {
           "symmetric player collision prevents two capsules from passing through each other");
     check(symmetric_left_order_error < 0.05f && symmetric_right_order_error < 0.05f,
           "symmetric player collision is independent of character update order");
+}
+
+void test_player_player_collision() {
+    test_player_pair_scenario("equal head-on",
+                              JPH::Vec3(2.0f, 0.0f, 0.0f),
+                              JPH::Vec3(-2.0f, 0.0f, 0.0f));
+    test_player_pair_scenario("moving into stationary",
+                              JPH::Vec3(2.0f, 0.0f, 0.0f),
+                              JPH::Vec3::sZero());
+    test_player_pair_scenario("unequal head-on",
+                              JPH::Vec3(1.0f, 0.0f, 0.0f),
+                              JPH::Vec3(-3.0f, 0.0f, 0.0f));
 }
 
 void test_character_state_replay() {
