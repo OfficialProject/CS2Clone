@@ -141,6 +141,8 @@ JPH::RefConst<JPH::Shape> make_capsule(const float cylinder_height, const float 
 
 class VirtualCharacter {
 public:
+    static constexpr float CharacterPadding = 0.02f;
+
     explicit VirtualCharacter(JoltWorld& world, const JPH::RVec3& position = JPH::RVec3::sZero(),
                               const bool start_crouched = false, const std::uint32_t stable_id = 0,
                               const bool use_jolt_character_collision = true)
@@ -152,6 +154,7 @@ public:
         JPH::CharacterVirtualSettings settings;
         settings.mShape = start_crouched ? crouched_shape_ : standing_shape_;
         settings.mMaxSlopeAngle = JPH::DegreesToRadians(45.0f);
+        settings.mCharacterPadding = CharacterPadding;
         settings.mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -0.3f);
         character_ = new JPH::CharacterVirtual(&settings, position, JPH::Quat::sIdentity(),
                                                 &world_.physics());
@@ -205,6 +208,7 @@ public:
             character_->GetCenterOfMassTransform(), JPH::Vec3::sReplicate(1.0f));
     }
     [[nodiscard]] std::uint32_t stable_id() const noexcept { return stable_id_; }
+    [[nodiscard]] float character_padding() const { return character_->GetCharacterPadding(); }
     void set_position(const JPH::RVec3& position) { character_->SetPosition(position); }
 
     [[nodiscard]] bool set_crouched(const bool crouched) {
@@ -305,21 +309,23 @@ void resolve_player_pair_symmetrically(VirtualCharacter& first, VirtualCharacter
     const JPH::AABox first_bounds = first.world_bounds();
     const JPH::AABox second_bounds = second.world_bounds();
 
-    const float first_radius = std::max({
+    const float first_shape_radius = std::max({
         static_cast<float>(first_bounds.mMax.GetX() - first_position.GetX()),
         static_cast<float>(first_position.GetX() - first_bounds.mMin.GetX()),
         static_cast<float>(first_bounds.mMax.GetZ() - first_position.GetZ()),
         static_cast<float>(first_position.GetZ() - first_bounds.mMin.GetZ())});
-    const float second_radius = std::max({
+    const float second_shape_radius = std::max({
         static_cast<float>(second_bounds.mMax.GetX() - second_position.GetX()),
         static_cast<float>(second_position.GetX() - second_bounds.mMin.GetX()),
         static_cast<float>(second_bounds.mMax.GetZ() - second_position.GetZ()),
         static_cast<float>(second_position.GetZ() - second_bounds.mMin.GetZ())});
+    const float first_radius = first_shape_radius + first.character_padding();
+    const float second_radius = second_shape_radius + second.character_padding();
 
-    const float first_segment_min = static_cast<float>(first_bounds.mMin.GetY()) + first_radius;
-    const float first_segment_max = static_cast<float>(first_bounds.mMax.GetY()) - first_radius;
-    const float second_segment_min = static_cast<float>(second_bounds.mMin.GetY()) + second_radius;
-    const float second_segment_max = static_cast<float>(second_bounds.mMax.GetY()) - second_radius;
+    const float first_segment_min = static_cast<float>(first_bounds.mMin.GetY()) + first_shape_radius;
+    const float first_segment_max = static_cast<float>(first_bounds.mMax.GetY()) - first_shape_radius;
+    const float second_segment_min = static_cast<float>(second_bounds.mMin.GetY()) + second_shape_radius;
+    const float second_segment_max = static_cast<float>(second_bounds.mMax.GetY()) - second_shape_radius;
 
     float vertical_delta = 0.0f;
     if (first_segment_max < second_segment_min) {
@@ -361,7 +367,7 @@ void resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players) {
     std::sort(players.begin(), players.end(), [](const VirtualCharacter* a, const VirtualCharacter* b) {
         return a->stable_id() < b->stable_id();
     });
-    for (int iteration = 0; iteration < 8; ++iteration) {
+    for (int iteration = 0; iteration < 32; ++iteration) {
         for (std::size_t first = 0; first < players.size(); ++first) {
             for (std::size_t second = first + 1; second < players.size(); ++second) {
                 resolve_player_pair_symmetrically(*players[first], *players[second]);
@@ -440,8 +446,8 @@ void test_ten_player_collision() {
           "Jolt character collision keeps ten players from overlapping");
     check(jolt_max_order_error < 0.05f,
           "Jolt ten-player collision is sufficiently stable under reversed update order");
-    check(symmetric_forward.minimum_separation > 0.5f && symmetric_reverse.minimum_separation > 0.5f,
-          "symmetric resolver keeps ten players from overlapping");
+    check(symmetric_forward.minimum_separation > 0.63f && symmetric_reverse.minimum_separation > 0.63f,
+          "symmetric resolver respects capsule padding in a ten-player group");
     check(symmetric_max_order_error < 0.001f,
           "symmetric ten-player collision is independent of update order");
 }
@@ -493,8 +499,8 @@ void test_player_pair_scenario(const std::string_view label,
           "Jolt simple character collision prevents capsules from passing through each other");
     check(jolt_left_order_error < 0.05f && jolt_right_order_error < 0.05f,
           "Jolt simple character collision is independent of update order");
-    check(symmetric_separation > 0.5f,
-          "symmetric player collision prevents two capsules from passing through each other");
+    check(symmetric_separation > 0.63f,
+          "symmetric player collision respects capsule padding and prevents overlap");
     check(symmetric_left_order_error < 0.05f && symmetric_right_order_error < 0.05f,
           "symmetric player collision is independent of character update order");
 }
