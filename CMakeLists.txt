@@ -29,3 +29,17 @@ if(CS2CLONE_BUILD_TESTS)
     cs2clone_configure_target(simulation_tests)
     add_test(NAME simulation_tests COMMAND simulation_tests)
 endif()
+
+option(CS2CLONE_BUILD_PLAYTEST "Build the interactive 3D movement feel lab" OFF)
+if(CS2CLONE_BUILD_PLAYTEST)
+    include(FetchContent)
+    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(raylib
+        URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(raylib)
+    add_executable(feel_lab tools/feel_lab/main.cpp)
+    target_link_libraries(feel_lab PRIVATE game_simulation raylib)
+    cs2clone_configure_target(feel_lab)
+endif()

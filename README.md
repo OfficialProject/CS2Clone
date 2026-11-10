@@ -39,3 +39,13 @@ ctest --test-dir build --output-on-failure
 - Third-party dependencies require version, license, platform, and maintenance review before adoption.
 
 See the docs directory for the architecture baseline and movement experiment notes. The current prototype is not evidence that the full engine exists.
+
+## Interactive movement playtest (Windows)
+
+The optional **Movement Feel Lab** is an early first-person, mouse-and-keyboard test scene. It uses the repository's C++ fixed-step movement simulation at 128 Hz, with a simple 3D environment, basic wall blocking, five shootable targets, speed readout, and reset. This is **not yet** a networked game or authoritative Jolt collision integration; hits are currently visual target checks without weapon accuracy/recoil modeling. Collision is a deliberately simplified flat-wall prototype.
+
+To download: open [Playtest build Actions](https://github.com/OfficialProject/CS2Clone/actions/workflows/playtest.yml), select a successful run, and download the **CS2Clone-Feel-Lab-Windows** artifact. Unzip both layers if necessary and run `feel_lab.exe`. GitHub may require sign-in to download artifacts.
+
+Controls: WASD move, mouse look, left-click shoot, Space jump, Ctrl/C crouch, R reset, Esc toggle mouse capture. Compare stopping, counter-strafing and crouch momentum against your expectations. Values are provisional.
+
+Local build (optional): `cmake -S . -B build -DCS2CLONE_BUILD_PLAYTEST=ON`, then `cmake --build build --config Release --target feel_lab`. This optional target fetches [raylib 5.5](https://github.com/raysan5/raylib) (zlib/libpng license); the default headless engine build remains dependency-free.
