@@ -1,5 +1,6 @@
 #include "game/simulation/movement.hpp"
 #include "raylib.h"
+#include "raymath.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
