@@ -213,7 +213,7 @@ public:
     void project_world() {
         const JPH::Vec3 saved_velocity = character_->GetLinearVelocity();
         character_->SetLinearVelocity(JPH::Vec3::sZero());
-        character_->Update(FixedDt, JPH::Vec3::sZero(),
+        character_->Update(JoltWorld::FixedDt, JPH::Vec3::sZero(),
                            world_.physics().GetDefaultBroadPhaseLayerFilter(Layers::Moving),
                            world_.physics().GetDefaultLayerFilter(Layers::Moving), {}, {}, world_.allocator());
         character_->SetLinearVelocity(saved_velocity);
@@ -445,11 +445,11 @@ void test_ten_player_collision() {
             symmetric_max_order_error, distance(symmetric_forward.positions[i], symmetric_reverse.positions[i]));
     }
 
-    std::cout << "10-player Jolt simple max update-order delta: " << jolt_max_order_error << '\\n';
+    std::cout << "10-player Jolt simple max update-order delta: " << jolt_max_order_error << '\n';
     std::cout << "10-player symmetric resolver max update-order delta: "
-              << symmetric_max_order_error << '\\n';
+              << symmetric_max_order_error << '\n';
     std::cout << "10-player minimum separation: Jolt=" << jolt_forward.minimum_separation
-              << " symmetric=" << symmetric_forward.minimum_separation << '\\n';
+              << " symmetric=" << symmetric_forward.minimum_separation << '\n';
     check(jolt_forward.minimum_separation > 0.5f && jolt_reverse.minimum_separation > 0.5f,
           "Jolt character collision keeps ten players from overlapping");
     check(jolt_max_order_error < 0.05f,
@@ -500,9 +500,9 @@ void test_player_pair_scenario(const std::string_view label,
         jolt_right_first.right.GetX() - jolt_right_first.left.GetX());
 
     std::cout << label << " / CharacterVirtual simple pair order delta: left=" << jolt_left_order_error
-              << " right=" << jolt_right_order_error << '\\n';
+              << " right=" << jolt_right_order_error << '\n';
     std::cout << label << " / symmetric pair solver order delta: left=" << symmetric_left_order_error
-              << " right=" << symmetric_right_order_error << '\\n';
+              << " right=" << symmetric_right_order_error << '\n';
     check(jolt_left_first_separation > 0.5f && jolt_right_first_separation > 0.5f,
           "Jolt simple character collision prevents capsules from passing through each other");
     check(jolt_left_order_error < 0.05f && jolt_right_order_error < 0.05f,
@@ -579,10 +579,10 @@ void test_player_collision_against_wall() {
 
     std::cout << "Wall-pinned pair clearance: Jolt=" << jolt_forward.wall_clearance
               << " raw symmetric=" << raw_forward.wall_clearance
-              << " projected symmetric=" << projected_forward.wall_clearance << '\\n';
+              << " projected symmetric=" << projected_forward.wall_clearance << '\n';
     std::cout << "Wall-pinned pair separation: Jolt=" << jolt_forward.player_separation
-              << " projected symmetric=" << projected_forward.player_separation << '\\n';
-    std::cout << "Wall-pinned symmetric solver update-order delta: " << projected_order_error << '\\n';
+              << " projected symmetric=" << projected_forward.player_separation << '\n';
+    std::cout << "Wall-pinned symmetric solver update-order delta: " << projected_order_error << '\n';
 
     check(jolt_forward.wall_clearance > -0.001f && jolt_reverse.wall_clearance > -0.001f,
           "Jolt character collision keeps the wall-pinned player outside the wall");
