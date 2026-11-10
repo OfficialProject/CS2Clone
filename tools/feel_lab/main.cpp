@@ -88,11 +88,11 @@ int run_lab(int argc, char* argv[]) {
         } else if (option == "--overview") overview=true;
         else throw std::runtime_error("Usage: feel_lab [--map FILE] [--capture PNG] [--overview] | --validate-map FILE | --record-drills [CSV]");
     }
-    if (map_path.empty()) {
+    feel_lab::ImportedMap map;
+    if (map_path.empty() && !map.load_embedded(argv[0])) {
         const auto automatic=std::filesystem::path(argv[0]).parent_path() / "mirage.map";
         if (std::filesystem::is_regular_file(automatic)) map_path=automatic;
     }
-    feel_lab::ImportedMap map;
     if (!map_path.empty()) map.load(map_path);
     cfg.flat_ground=!map.loaded();
     MovementSimulator simulation(cfg);
@@ -125,7 +125,7 @@ int run_lab(int argc, char* argv[]) {
     InitWindow(1280, 720, "CS2Clone | Movement Feel Lab");
     SetTargetFPS(240);
     SetExitKey(KEY_NULL);
-    SetWindowMinSize(520, 480);
+    SetWindowMinSize(520, 512);
     feel_lab::Settings settings;
     settings.load();
     if (capture_path.empty()) DisableCursor();
@@ -141,7 +141,8 @@ int run_lab(int argc, char* argv[]) {
     bool targets[5] = {};
     int hits = 0, shots = 0;
     double total_time = 0.0, accumulator = 0.0;
-    bool paused = false, prev_jump = false;
+    bool paused = false, pending_jump = false;
+    std::array<bool, feel_lab::Settings::Count> wheel_pulses{};
     float last_hit_flash = 0.0f;
     const char* drill_status = "Record nine movement drills";
     while (!WindowShouldClose()) {
@@ -163,29 +164,47 @@ int run_lab(int argc, char* argv[]) {
         }
         if (settings.visible && was_settings && !IsKeyPressed(KEY_ESCAPE)) settings.update();
         const bool accepting_input = !settings.visible && !was_settings;
-        if (accepting_input && IsKeyPressed(settings.keys[feel_lab::Settings::Reset])) {reset_position(state); yaw=map.loaded()?map.spawn_yaw:0; pitch=0; hits=0; shots=0; total_time=0; accumulator=0; prev_jump=false; for(bool& t:targets)t=false;}
-        if (accepting_input && IsKeyPressed(settings.keys[feel_lab::Settings::Drills])) {
+        if (accepting_input && settings.pressed(feel_lab::Settings::Reset)) {reset_position(state); yaw=map.loaded()?map.spawn_yaw:0; pitch=0; hits=0; shots=0; total_time=0; accumulator=0; pending_jump=false; wheel_pulses.fill(false); for(bool& t:targets)t=false;}
+        if (accepting_input && settings.pressed(feel_lab::Settings::Drills)) {
             drill_status = export_default_drills(simulation)
                 ? "Saved to temp folder / CS2Clone / movement-drills.csv"
                 : "CSV export failed. See the console for details.";
+        }
+        if (!accepting_input || paused) {
+            pending_jump = false;
+            wheel_pulses.fill(false);
         }
         if (accepting_input && !paused) {
             const Vector2 mouse = GetMouseDelta();
             yaw += mouse.x * 0.0022f * settings.sensitivity;
             pitch = std::clamp(pitch - mouse.y * 0.0022f * settings.sensitivity, -1.45f, 1.45f);
             const float sn = std::sin(yaw), cs = std::cos(yaw);
-            const float f = static_cast<float>(IsKeyDown(settings.keys[feel_lab::Settings::Forward])) - static_cast<float>(IsKeyDown(settings.keys[feel_lab::Settings::Back]));
-            const float r = static_cast<float>(IsKeyDown(settings.keys[feel_lab::Settings::Right])) - static_cast<float>(IsKeyDown(settings.keys[feel_lab::Settings::Left]));
-            const bool jump = IsKeyDown(settings.keys[feel_lab::Settings::Jump]);
-            const bool crouch = IsKeyDown(settings.keys[feel_lab::Settings::Crouch]) || (settings.keys[feel_lab::Settings::Crouch] == KEY_LEFT_CONTROL && std::find(settings.keys.begin(), settings.keys.end(), KEY_C) == settings.keys.end() && IsKeyDown(KEY_C));
+            using Controls = feel_lab::Settings;
+            pending_jump = pending_jump || settings.pressed(Controls::Jump);
+            for (const auto action : {Controls::Forward, Controls::Back, Controls::Left,
+                                      Controls::Right, Controls::Crouch, Controls::Walk}) {
+                if (Controls::is_wheel(settings.keys[action]) && settings.pressed(action))
+                    wheel_pulses[action] = true;
+            }
+            const auto held = [&](Controls::Action action) {
+                return settings.down(action) || wheel_pulses[action];
+            };
             accumulator = std::min(accumulator + frame_dt, 0.15);
             while (accumulator >= cfg.fixed_dt) {
+                const float f = static_cast<float>(held(Controls::Forward)) -
+                                static_cast<float>(held(Controls::Back));
+                const float r = static_cast<float>(held(Controls::Right)) -
+                                static_cast<float>(held(Controls::Left));
+                const bool crouch = held(Controls::Crouch) ||
+                    (settings.keys[Controls::Crouch] == KEY_LEFT_CONTROL &&
+                     std::find(settings.keys.begin(), settings.keys.end(), KEY_C) == settings.keys.end() &&
+                     IsKeyDown(KEY_C));
                 MovementInput input;
                 input.forward = static_cast<double>(-f * cs + r * sn);
                 input.right = static_cast<double>(f * sn + r * cs);
-                input.jump_pressed = jump && !prev_jump;
+                input.jump_pressed = pending_jump;
                 input.crouch_held = crouch;
-                input.walk_held = IsKeyDown(settings.keys[feel_lab::Settings::Walk]);
+                input.walk_held = held(Controls::Walk);
                 const MovementState old = state;
                 if (map.loaded()) {
                     map.advance(simulation,state,input);
@@ -202,12 +221,13 @@ int run_lab(int argc, char* argv[]) {
                 if (map.loaded() && state.vertical_position < map.lowest-10) reset_position(state);
                 accumulator -= cfg.fixed_dt;
                 total_time += cfg.fixed_dt;
-                prev_jump = jump;
+                pending_jump = false;
+                wheel_pulses.fill(false);
             }
             const float eye = map.loaded() ? (64.0f-18.0f*static_cast<float>(state.crouch_fraction))*static_cast<float>(MovementConfig::source_unit) : standing_eye + (crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
             const Vector3 pos = {static_cast<float>(state.position.x), eye+static_cast<float>(state.vertical_position), static_cast<float>(state.position.y)};
             const Vector3 dir = {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)};
-            if (!map.loaded() && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (!map.loaded() && settings.pressed(Controls::Fire)) {
                 ++shots;
                 const Ray ray={pos,dir};
                 float nearest=1000;
@@ -249,7 +269,7 @@ int run_lab(int argc, char* argv[]) {
             state.mode==MovementMode::Grounded?"GROUND":"AIR"),24,51,18,RAYWHITE);
         if (map.loaded()) DrawText(TextFormat("Mirage geometry  |  %s returns to T spawn",feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reset])),24,78,18,RAYWHITE);
         else DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24,78,18,RAYWHITE);
-        DrawText(map.loaded()?"Tab settings  |  Mouse aim":"Tab settings  |  Mouse aim  |  LMB fire",24,106,16,RAYWHITE);
+        DrawText(map.loaded()?"Tab settings  |  Mouse aim":"Tab settings  |  Mouse aim",24,106,16,RAYWHITE);
         DrawText("Esc pause / resume",24,127,16,RAYWHITE);
         DrawText(TextFormat("%s: %s", feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Drills]), drill_status),24,151,16,RAYWHITE);
         if(hits==5) {DrawRectangle(cx-225,cy-100,450,50,{18,30,23,220});DrawText("ALL TARGETS HIT",cx-194,cy-86,23,GREEN);}

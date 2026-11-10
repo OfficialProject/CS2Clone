@@ -21,8 +21,33 @@ public:
     float spawn_yaw = 0;
     float lowest = 0;
 
+    bool load_embedded(const std::filesystem::path& executable) {
+        std::ifstream file(executable, std::ios::binary | std::ios::ate);
+        const auto end = file.tellg();
+        constexpr std::streamoff footer_size = 16;
+        if (end < footer_size) return false;
+        file.seekg(end - footer_size);
+        std::uint64_t size = 0;
+        std::array<char, 8> tag{};
+        file.read(reinterpret_cast<char*>(&size), static_cast<std::streamsize>(sizeof(size)));
+        file.read(tag.data(), static_cast<std::streamsize>(tag.size()));
+        if (!file || std::memcmp(tag.data(), "CS2PACK1", tag.size()) != 0) return false;
+        const auto payload_end = static_cast<std::streamoff>(end) - footer_size;
+        if (size > static_cast<std::uint64_t>(payload_end))
+            throw std::runtime_error("Invalid embedded Mirage map");
+        file.seekg(payload_end - static_cast<std::streamoff>(size));
+        load_geometry(file, size);
+        return true;
+    }
+
     void load(const std::filesystem::path& path) {
         std::ifstream file(path, std::ios::binary);
+        if (!file) throw std::runtime_error("Could not open playtest map");
+        load_geometry(file, std::filesystem::file_size(path));
+    }
+
+private:
+    void load_geometry(std::istream& file, std::uint64_t size) {
         std::array<char,8> magic{};
         std::uint32_t render_count=0, collision_count=0;
         file.read(magic.data(), 8);
@@ -32,7 +57,7 @@ public:
         file.read(reinterpret_cast<char*>(&spawn_yaw), 4);
         if (!file || std::memcmp(magic.data(),"CS2MAP01",8) != 0 ||
             render_count == 0 || render_count > 4000000 || collision_count == 0 || collision_count > 2000000 ||
-            std::filesystem::file_size(path) != 32ull + (render_count+collision_count)*36ull)
+            size != 32ull + (render_count+collision_count)*36ull)
             throw std::runtime_error("Invalid playtest map header");
         if (!std::isfinite(spawn.x) || !std::isfinite(spawn.y) || !std::isfinite(spawn.z) ||
             !std::isfinite(spawn_yaw)) throw std::runtime_error("Invalid map spawn");
@@ -56,6 +81,7 @@ public:
         collision.build(std::move(solid));
     }
 
+public:
     bool loaded() const { return uploaded || !visual.empty(); }
 
     game::simulation::MovementState spawn_player() const {

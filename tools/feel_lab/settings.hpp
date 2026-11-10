@@ -11,11 +11,14 @@
 namespace feel_lab {
 
 struct Settings {
-    enum Action { Forward, Back, Left, Right, Jump, Crouch, Reset, Drills, Walk, Count };
+    enum Action { Forward, Back, Left, Right, Jump, Crouch, Reset, Drills, Walk, Fire, Count };
     static constexpr std::array<const char*, Count> names{
-        "Forward", "Back", "Left", "Right", "Jump", "Crouch", "Reset", "Record drills", "Walk"};
+        "Forward", "Back", "Left", "Right", "Jump", "Crouch", "Reset", "Record drills", "Walk", "Fire"};
+    static constexpr int mouse_base = -100;
+    static constexpr int wheel_up = -201;
+    static constexpr int wheel_down = -202;
     static constexpr std::array<int, Count> defaults{
-        KEY_W, KEY_S, KEY_A, KEY_D, KEY_SPACE, KEY_LEFT_CONTROL, KEY_R, KEY_F5, KEY_LEFT_SHIFT};
+        KEY_W, KEY_S, KEY_A, KEY_D, KEY_SPACE, KEY_LEFT_CONTROL, KEY_R, KEY_F5, KEY_LEFT_SHIFT, mouse_base - MOUSE_BUTTON_LEFT};
 
     std::array<int, Count> keys = defaults;
     float sensitivity = 1.0f;
@@ -30,10 +33,10 @@ struct Settings {
         for (std::size_t index = 0; index < saved.size(); ++index) {
             int key = 0;
             if (!(file >> key)) {
-                if (index == Walk && file.eof()) break;
+                if ((index == Walk || index == Fire) && file.eof()) break;
                 return;
             }
-            if (key < 32 || key > KEY_KB_MENU || key == KEY_ESCAPE || key == KEY_TAB) return;
+            if (!valid_binding(key)) return;
             saved[index] = key;
         }
         for (auto it = saved.begin(); it != saved.end(); ++it) {
@@ -60,10 +63,43 @@ struct Settings {
         DrawText(label, static_cast<int>(bounds.x) + 8, static_cast<int>(bounds.y) + 5, 17, RAYWHITE);
     }
 
+    static bool is_mouse_button(int binding) {
+        return binding <= mouse_base - MOUSE_BUTTON_LEFT &&
+               binding >= mouse_base - MOUSE_BUTTON_BACK;
+    }
+
+    static bool is_wheel(int binding) {
+        return binding == wheel_up || binding == wheel_down;
+    }
+
+    static bool valid_binding(int binding) {
+        return is_mouse_button(binding) || is_wheel(binding) ||
+               (binding >= 32 && binding <= KEY_KB_MENU &&
+                binding != KEY_ESCAPE && binding != KEY_TAB);
+    }
+
+    bool down(Action action) const {
+        const int binding = keys[action];
+        if (is_wheel(binding)) return false;
+        return is_mouse_button(binding) ? IsMouseButtonDown(mouse_base - binding) : IsKeyDown(binding);
+    }
+
+    bool pressed(Action action) const {
+        const int binding = keys[action];
+        if (binding == wheel_up) return GetMouseWheelMove() > 0;
+        if (binding == wheel_down) return GetMouseWheelMove() < 0;
+        return is_mouse_button(binding) ? IsMouseButtonPressed(mouse_base - binding) : IsKeyPressed(binding);
+    }
+
     void update() {
         if (rebinding >= 0) {
-            const int key = GetKeyPressed();
-            if (key != 0 && key != KEY_ESCAPE && key != KEY_TAB) {
+            int key = GetKeyPressed();
+            const float wheel = GetMouseWheelMove();
+            if (wheel != 0) key = wheel > 0 ? wheel_up : wheel_down;
+            for (int button = MOUSE_BUTTON_LEFT; key == 0 && button <= MOUSE_BUTTON_BACK; ++button) {
+                if (IsMouseButtonPressed(button)) key = mouse_base - button;
+            }
+            if (valid_binding(key)) {
                 auto& current = keys[static_cast<std::size_t>(rebinding)];
                 const auto existing = std::find(keys.begin(), keys.end(), key);
                 if (existing != keys.end()) std::swap(*existing, current);
@@ -102,6 +138,15 @@ struct Settings {
             return TextFormat("%c", key);
         if (key >= KEY_F1 && key <= KEY_F12) return TextFormat("F%d", key - KEY_F1 + 1);
         switch (key) {
+        case wheel_up: return "Wheel Up";
+        case wheel_down: return "Wheel Down";
+        case mouse_base - MOUSE_BUTTON_LEFT: return "Mouse Left";
+        case mouse_base - MOUSE_BUTTON_RIGHT: return "Mouse Right";
+        case mouse_base - MOUSE_BUTTON_MIDDLE: return "Mouse Middle";
+        case mouse_base - MOUSE_BUTTON_SIDE: return "Mouse Side";
+        case mouse_base - MOUSE_BUTTON_EXTRA: return "Mouse Extra";
+        case mouse_base - MOUSE_BUTTON_FORWARD: return "Mouse Forward";
+        case mouse_base - MOUSE_BUTTON_BACK: return "Mouse Back";
         case KEY_SPACE: return "Space";
         case KEY_LEFT_CONTROL: return "Left Ctrl";
         case KEY_RIGHT_CONTROL: return "Right Ctrl";
@@ -116,7 +161,7 @@ struct Settings {
     }
 
     void draw() const {
-        DrawRectangle(16, 16, 492, 446, {12, 18, 26, 248});
+        DrawRectangle(16, 16, 492, 480, {12, 18, 26, 248});
         DrawText("SETTINGS", 32, 29, 22, RAYWHITE);
         DrawText("Tab / Esc to close", 335, 32, 16, LIGHTGRAY);
         DrawText(TextFormat("Sensitivity: %.1fx", static_cast<double>(sensitivity)), 32, 75, 17, RAYWHITE);
@@ -127,9 +172,9 @@ struct Settings {
             const float y = 112.0f + 34.0f * static_cast<float>(index);
             const auto offset = static_cast<std::size_t>(index);
             DrawText(names[offset], 32, static_cast<int>(y) + 5, 17, RAYWHITE);
-            draw_button(control(230, y, 258), index == rebinding ? "Press a key (Esc cancels)" : key_label(keys[offset]));
+            draw_button(control(230, y, 258), index == rebinding ? "Press key, button, or scroll" : key_label(keys[offset]));
         }
-        DrawText("Click a binding to change it. Existing bindings swap.", 32, 429, 15, LIGHTGRAY);
+        DrawText("Click a binding to change it. Existing bindings swap.", 32, 463, 15, LIGHTGRAY);
     }
 };
 
