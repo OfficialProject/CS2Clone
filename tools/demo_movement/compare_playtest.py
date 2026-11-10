@@ -1,5 +1,6 @@
 """Score Movement Feel Lab traces on the demo observation grid."""
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -52,6 +53,36 @@ def compare_cohorts(clone_cohorts, demo, weapon):
     ]
 
 
+def drill_results(frame, episodes_path, reference_speed):
+    with episodes_path.open(encoding="utf-8", newline="") as handle:
+        stops = {row["player"]: row for row in csv.DictReader(handle)}
+    result = []
+    for player, group in frame.groupby("steamid", sort=False):
+        kind = group["drill"].iloc[0]
+        entry = {"drill": kind, "start_pct": int(group["start_pct"].iloc[0])}
+        if kind == "rest_to_run":
+            first = group.loc[group["velocity_X"].ge(reference_speed * 0.9), "tick"]
+            entry["time_to_90pct_top_speed_ms"] = (float(first.iloc[0] - 2) * 1000 / RATE
+                                                   if len(first) else None)
+        else:
+            stop = stops.get(player)
+            entry["sampled_stop_ms"] = (float(stop["tick_delta_ms"])
+                                        if stop and stop["tick_delta_ms"] else None)
+            # All stop drills begin along +X. Follow the projection even after
+            # the speed threshold is reached, while the scripted input is held.
+            previous = group["velocity_X"].shift()
+            after = group["velocity_X"]
+            crossing = group.loc[previous.gt(0) & after.le(0)].head(1)
+            entry["projected_zero_ms"] = None
+            if len(crossing):
+                index = crossing.index[0]
+                before = previous.at[index]
+                zero = frame.at[index, "tick"] - 1 + before / (before - after.at[index])
+                entry["projected_zero_ms"] = float(zero - 2) * 1000 / RATE
+        result.append(entry)
+    return result
+
+
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("trace", type=Path)
@@ -75,6 +106,7 @@ def main():
         "tick_rate": RATE, "stop_speed": demo["stop_speed"],
         "reference_top_speed": args.reference_top_speed, "position_scale": scale,
         "counts": dict(counts), "summaries": summarize(args.out),
+        "drills": drill_results(frame, args.out / "episodes.csv", args.reference_top_speed),
         "stop_cohorts": compare_cohorts(stop_cohorts(args.out), demo, args.weapon),
     }
     (args.out / "summary.json").write_text(json.dumps(result, indent=2) + "\n",

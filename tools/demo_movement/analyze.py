@@ -344,7 +344,7 @@ def main():
     if not frame[["velocity_X", "velocity_Y"]].notna().all(axis=1).any():
         cli.error("no adjacent grounded position samples at the specified tick rate")
     counts = write_measurements(args.out, frame, args.tick_rate, args.stop_speed)
-    result = dict(schema_version=1, demo=args.demo.name, sha256=digest, header=header,
+    result = dict(schema_version=1, demo=args.demo.name, sha256=digest, header=dict(sorted(header.items())),
                   parser=version("demoparser2"), tick_rate=args.tick_rate,
                   stop_speed=args.stop_speed, player_ticks=len(frame),
                   capabilities=capabilities, counts=dict(counts), summaries=summarize(args.out),
