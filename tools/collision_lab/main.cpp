@@ -218,8 +218,8 @@ void check(const bool condition, const std::string_view message) {
 
 void test_fall_to_floor() {
     JoltWorld world;
-    world.add_box(JPH::RVec3(0.0, -0.5, 0.0), JPH::Vec3(20.0f, 0.5f, 20.0f));
-    VirtualCharacter character(world, JPH::RVec3(0.0, 2.0, 0.0));
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
+    VirtualCharacter character(world, JPH::RVec3(0.0f, 2.0f, 0.0f));
     for (int i = 0; i < 256; ++i) character.step(JPH::Vec3::sZero());
     check(character.ground_state() == JPH::CharacterBase::EGroundState::OnGround,
           "virtual character lands on the static floor");
@@ -229,8 +229,8 @@ void test_fall_to_floor() {
 
 void test_wall_collision() {
     JoltWorld world;
-    world.add_box(JPH::RVec3(0.0, -0.5, 0.0), JPH::Vec3(20.0f, 0.5f, 20.0f));
-    world.add_box(JPH::RVec3(0.0, 2.0, 4.0), JPH::Vec3(2.0f, 2.0f, 0.1f));
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
+    world.add_box(JPH::RVec3(0.0f, 2.0f, 4.0f), JPH::Vec3(2.0f, 2.0f, 0.1f));
     VirtualCharacter character(world);
     for (int i = 0; i < 128; ++i) character.step(JPH::Vec3(0.0f, 0.0f, 8.0f));
     const float z = static_cast<float>(character.position().GetZ());
@@ -240,10 +240,10 @@ void test_wall_collision() {
 
 void test_stair_traversal() {
     JoltWorld world;
-    world.add_box(JPH::RVec3(0.0, -0.5, 0.0), JPH::Vec3(20.0f, 0.5f, 20.0f));
-    world.add_box(JPH::RVec3(0.0, 0.075, 1.5), JPH::Vec3(2.0f, 0.075f, 0.5f));
-    world.add_box(JPH::RVec3(0.0, 0.15, 2.5), JPH::Vec3(2.0f, 0.15f, 0.5f));
-    world.add_box(JPH::RVec3(0.0, 0.225, 3.5), JPH::Vec3(2.0f, 0.225f, 0.5f));
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
+    world.add_box(JPH::RVec3(0.0f, 0.075f, 1.5f), JPH::Vec3(2.0f, 0.075f, 0.5f));
+    world.add_box(JPH::RVec3(0.0f, 0.15f, 2.5f), JPH::Vec3(2.0f, 0.15f, 0.5f));
+    world.add_box(JPH::RVec3(0.0f, 0.225f, 3.5f), JPH::Vec3(2.0f, 0.225f, 0.5f));
     VirtualCharacter character(world);
     for (int i = 0; i < 160; ++i) character.step(JPH::Vec3(0.0f, 0.0f, 3.0f));
     check(character.position().GetZ() > 3.2,
@@ -254,8 +254,8 @@ void test_stair_traversal() {
 
 void test_crouch_shape_clearance() {
     JoltWorld world;
-    world.add_box(JPH::RVec3(0.0, -0.5, 0.0), JPH::Vec3(5.0f, 0.5f, 5.0f));
-    world.add_box(JPH::RVec3(0.0, 1.45, 0.0), JPH::Vec3(2.0f, 0.05f, 2.0f));
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(5.0f, 0.5f, 5.0f));
+    world.add_box(JPH::RVec3(0.0f, 1.45f, 0.0f), JPH::Vec3(2.0f, 0.05f, 2.0f));
     VirtualCharacter character(world, JPH::RVec3::sZero(), true);
     check(character.shape() == character.crouched_shape(),
           "character begins with the crouched collision shape");
@@ -267,7 +267,7 @@ void test_crouch_shape_clearance() {
 
 void test_character_state_replay() {
     JoltWorld world;
-    world.add_box(JPH::RVec3(0.0, -0.5, 0.0), JPH::Vec3(20.0f, 0.5f, 20.0f));
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
     VirtualCharacter character(world);
     for (int i = 0; i < 40; ++i) character.step(JPH::Vec3(2.0f, 0.0f, 0.0f));
 
