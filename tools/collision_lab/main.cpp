@@ -14,6 +14,7 @@
 #include <cstdarg>
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <cstdio>
 #include <cmath>
 #include <stdexcept>
@@ -355,6 +356,97 @@ void resolve_player_pair_symmetrically(VirtualCharacter& first, VirtualCharacter
         second_position.GetZ() + normal_z * correction));
 }
 
+
+void resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players) {
+    std::sort(players.begin(), players.end(), [](const VirtualCharacter* a, const VirtualCharacter* b) {
+        return a->stable_id() < b->stable_id();
+    });
+    for (int iteration = 0; iteration < 8; ++iteration) {
+        for (std::size_t first = 0; first < players.size(); ++first) {
+            for (std::size_t second = first + 1; second < players.size(); ++second) {
+                resolve_player_pair_symmetrically(*players[first], *players[second]);
+            }
+        }
+    }
+}
+
+struct PlayerGroupResult {
+    std::vector<JPH::RVec3> positions;
+    float minimum_separation = std::numeric_limits<float>::max();
+};
+
+PlayerGroupResult run_ten_player_group(const bool use_jolt_collision, const bool reverse_order) {
+    JoltWorld world;
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
+
+    std::vector<std::unique_ptr<VirtualCharacter>> owned_players;
+    std::vector<VirtualCharacter*> players;
+    std::vector<JPH::Vec3> inputs;
+    owned_players.reserve(10);
+    players.reserve(10);
+    inputs.reserve(10);
+
+    for (std::uint32_t index = 0; index < 10; ++index) {
+        const float x = (static_cast<float>(index) - 4.5f) * 0.65f;
+        owned_players.push_back(std::make_unique<VirtualCharacter>(
+            world, JPH::RVec3(x, 0.0f, 0.0f), false, index + 1, use_jolt_collision));
+        players.push_back(owned_players.back().get());
+        inputs.emplace_back(index < 5 ? JPH::Vec3(2.0f, 0.0f, 0.0f)
+                                      : JPH::Vec3(-2.0f, 0.0f, 0.0f));
+    }
+
+    for (int tick = 0; tick < 128; ++tick) {
+        if (reverse_order) {
+            for (std::size_t i = players.size(); i-- > 0;) players[i]->step(inputs[i]);
+        } else {
+            for (std::size_t i = 0; i < players.size(); ++i) players[i]->step(inputs[i]);
+        }
+        if (!use_jolt_collision) resolve_player_set_symmetrically(players);
+    }
+
+    PlayerGroupResult result;
+    result.positions.reserve(players.size());
+    for (const VirtualCharacter* player : players) result.positions.push_back(player->position());
+    for (std::size_t first = 0; first < result.positions.size(); ++first) {
+        for (std::size_t second = first + 1; second < result.positions.size(); ++second) {
+            const float separation = distance(result.positions[first], result.positions[second]);
+            result.minimum_separation = std::min(result.minimum_separation, separation);
+        }
+    }
+    return result;
+}
+
+void test_ten_player_collision() {
+    const PlayerGroupResult jolt_forward = run_ten_player_group(true, false);
+    const PlayerGroupResult jolt_reverse = run_ten_player_group(true, true);
+    const PlayerGroupResult symmetric_forward = run_ten_player_group(false, false);
+    const PlayerGroupResult symmetric_reverse = run_ten_player_group(false, true);
+
+    float jolt_max_order_error = 0.0f;
+    float symmetric_max_order_error = 0.0f;
+    for (std::size_t i = 0; i < jolt_forward.positions.size(); ++i) {
+        jolt_max_order_error = std::max(
+            jolt_max_order_error, distance(jolt_forward.positions[i], jolt_reverse.positions[i]));
+        symmetric_max_order_error = std::max(
+            symmetric_max_order_error, distance(symmetric_forward.positions[i], symmetric_reverse.positions[i]));
+    }
+
+    std::cout << "10-player Jolt simple max update-order delta: " << jolt_max_order_error << '\\n';
+    std::cout << "10-player symmetric resolver max update-order delta: "
+              << symmetric_max_order_error << '\\n';
+    std::cout << "10-player minimum separation: Jolt=" << jolt_forward.minimum_separation
+              << " symmetric=" << symmetric_forward.minimum_separation << '\\n';
+    check(jolt_forward.minimum_separation > 0.5f && jolt_reverse.minimum_separation > 0.5f,
+          "Jolt character collision keeps ten players from overlapping");
+    check(jolt_max_order_error < 0.05f,
+          "Jolt ten-player collision is sufficiently stable under reversed update order");
+    check(symmetric_forward.minimum_separation > 0.5f && symmetric_reverse.minimum_separation > 0.5f,
+          "symmetric resolver keeps ten players from overlapping");
+    check(symmetric_max_order_error < 0.001f,
+          "symmetric ten-player collision is independent of update order");
+}
+
+
 PairResult run_player_pair(const bool use_jolt_collision, const bool right_first,
                            const JPH::Vec3& left_input, const JPH::Vec3& right_input) {
     JoltWorld world;
@@ -449,6 +541,7 @@ int main() {
     test_stair_traversal();
     test_crouch_shape_clearance();
     test_player_player_collision();
+    test_ten_player_collision();
     test_character_state_replay();
 
     if (failures != 0) {
