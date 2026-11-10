@@ -1,6 +1,7 @@
 #include "drills.hpp"
 #include "raylib.h"
 #include "raymath.h"
+#include "settings.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -43,6 +44,8 @@ bool ray_hits_wall(const Ray ray, float& nearest) {
 
 int main(int argc, char* argv[]) {
     MovementConfig cfg;
+    // Experimental: allow a running jump to reverse with airtime remaining.
+    cfg.air_acceleration = 18.0;
     MovementSimulator simulation(cfg);
     if (argc != 1) {
         if (argc == 3 && std::string_view(argv[1]) == "--record-drills") {
@@ -56,6 +59,10 @@ int main(int argc, char* argv[]) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(1280, 720, "CS2Clone | Movement Feel Lab");
     SetTargetFPS(240);
+    SetExitKey(KEY_NULL);
+    SetWindowMinSize(520, 440);
+    feel_lab::Settings settings;
+    settings.load();
     DisableCursor();
     MovementState state;
     state.position = {0, 0};
@@ -65,25 +72,41 @@ int main(int argc, char* argv[]) {
     double total_time = 0.0, accumulator = 0.0;
     bool paused = false, prev_jump = false;
     float last_hit_flash = 0.0f;
-    const char* drill_status = "F5: Record nine movement drills";
+    const char* drill_status = "Record nine movement drills";
     while (!WindowShouldClose()) {
         const float frame_dt = std::min(GetFrameTime(), 0.1f);
-        if (IsKeyPressed(KEY_ESCAPE)) {paused = !paused; if(paused) EnableCursor(); else DisableCursor();}
-        if (IsKeyPressed(KEY_R)) {state = {}; yaw=0; pitch=0; hits=0; shots=0; total_time=0; for(bool& t:targets)t=false;}
-        if (IsKeyPressed(KEY_F5)) {
+        const bool was_settings = settings.visible;
+        const bool cursor_was_free = was_settings || paused;
+        if (IsKeyPressed(KEY_TAB)) {
+            settings.visible = !settings.visible;
+            settings.rebinding = -1;
+        } else if (IsKeyPressed(KEY_ESCAPE)) {
+            if (settings.rebinding >= 0) settings.rebinding = -1;
+            else if (settings.visible) settings.visible = false;
+            else paused = !paused;
+        }
+        const bool cursor_is_free = settings.visible || paused;
+        if (cursor_is_free != cursor_was_free) {
+            if (cursor_is_free) EnableCursor();
+            else DisableCursor();
+        }
+        if (settings.visible && was_settings && !IsKeyPressed(KEY_ESCAPE)) settings.update();
+        const bool accepting_input = !settings.visible && !was_settings;
+        if (accepting_input && IsKeyPressed(settings.keys[feel_lab::Settings::Reset])) {state = {}; yaw=0; pitch=0; hits=0; shots=0; total_time=0; for(bool& t:targets)t=false;}
+        if (accepting_input && IsKeyPressed(settings.keys[feel_lab::Settings::Drills])) {
             drill_status = feel_lab::record_drills("movement-drills.csv", simulation)
-                ? "Saved movement-drills.csv (F5 to rerun)"
+                ? "Saved movement-drills.csv"
                 : "Could not write movement-drills.csv";
         }
-        if (!paused) {
+        if (accepting_input && !paused) {
             const Vector2 mouse = GetMouseDelta();
-            yaw += mouse.x * 0.0022f;
-            pitch = std::clamp(pitch - mouse.y * 0.0022f, -1.45f, 1.45f);
+            yaw += mouse.x * 0.0022f * settings.sensitivity;
+            pitch = std::clamp(pitch - mouse.y * 0.0022f * settings.sensitivity, -1.45f, 1.45f);
             const float sn = std::sin(yaw), cs = std::cos(yaw);
-            const float f = static_cast<float>(IsKeyDown(KEY_W)) - static_cast<float>(IsKeyDown(KEY_S));
-            const float r = static_cast<float>(IsKeyDown(KEY_D)) - static_cast<float>(IsKeyDown(KEY_A));
-            const bool jump = IsKeyDown(KEY_SPACE);
-            const bool crouch = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_C);
+            const float f = static_cast<float>(IsKeyDown(settings.keys[feel_lab::Settings::Forward])) - static_cast<float>(IsKeyDown(settings.keys[feel_lab::Settings::Back]));
+            const float r = static_cast<float>(IsKeyDown(settings.keys[feel_lab::Settings::Right])) - static_cast<float>(IsKeyDown(settings.keys[feel_lab::Settings::Left]));
+            const bool jump = IsKeyDown(settings.keys[feel_lab::Settings::Jump]);
+            const bool crouch = IsKeyDown(settings.keys[feel_lab::Settings::Crouch]) || (settings.keys[feel_lab::Settings::Crouch] == KEY_LEFT_CONTROL && std::find(settings.keys.begin(), settings.keys.end(), KEY_C) == settings.keys.end() && IsKeyDown(KEY_C));
             accumulator = std::min(accumulator + frame_dt, 0.15);
             while (accumulator >= cfg.fixed_dt) {
                 MovementInput input;
@@ -144,12 +167,13 @@ int main(int argc, char* argv[]) {
             std::hypot(state.velocity.x,state.velocity.y),state.crouch_fraction*100,
             state.mode==MovementMode::Grounded?"GROUND":"AIR"),24,51,18,RAYWHITE);
         DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24,78,18,RAYWHITE);
-        DrawText("WASD move  |  Mouse aim  |  LMB fire  |  Space jump",24,106,16,RAYWHITE);
-        DrawText("Ctrl/C crouch  |  R reset  |  Esc release mouse",24,127,16,RAYWHITE);
-        DrawText(drill_status,24,151,16,RAYWHITE);
-        if(hits==5) {DrawRectangle(cx-225,cy-100,450,50,{18,30,23,220});DrawText("ALL TARGETS HIT - R TO RESET",cx-194,cy-86,23,GREEN);}
+        DrawText("Tab settings  |  Mouse aim  |  LMB fire",24,106,16,RAYWHITE);
+        DrawText("Esc pause / resume",24,127,16,RAYWHITE);
+        DrawText(TextFormat("%s: %s", feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Drills]), drill_status),24,151,16,RAYWHITE);
+        if(hits==5) {DrawRectangle(cx-225,cy-100,450,50,{18,30,23,220});DrawText("ALL TARGETS HIT",cx-194,cy-86,23,GREEN);}
         if(paused) DrawText("PAUSED - ESC TO RESUME",cx-160,cy+75,23,YELLOW);
         DrawFPS(GetScreenWidth()-100,20);
+        if (settings.visible) settings.draw();
         EndDrawing();
     }
     CloseWindow();
