@@ -14,6 +14,7 @@
 #include <cstdarg>
 #include <algorithm>
 #include <cstdint>
+#include <chrono>
 #include <limits>
 #include <cstdio>
 #include <cmath>
@@ -636,6 +637,7 @@ struct PlayerWallGroupResult {
     float minimum_separation = std::numeric_limits<float>::max();
     float wall_clearance = 0.0f;
     int max_solver_passes = 0;
+    long long elapsed_microseconds = 0;
 };
 
 PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
@@ -657,6 +659,7 @@ PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
     }
 
     int max_solver_passes = 0;
+    const auto simulation_start = std::chrono::steady_clock::now();
     for (int tick = 0; tick < 128; ++tick) {
         if (reverse_order) {
             for (std::size_t i = players.size(); i-- > 0;)
@@ -671,8 +674,11 @@ PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
         }
     }
 
+    const auto simulation_end = std::chrono::steady_clock::now();
     PlayerWallGroupResult result;
     result.max_solver_passes = max_solver_passes;
+    result.elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(
+        simulation_end - simulation_start).count();
     result.positions.reserve(players.size());
     for (const VirtualCharacter* player : players) result.positions.push_back(player->position());
     for (std::size_t first = 0; first < result.positions.size(); ++first) {
@@ -706,10 +712,17 @@ void test_ten_player_corridor_wall() {
     std::cout << "10-player corridor Jolt: min separation=" << jolt_forward.minimum_separation
               << " wall clearance=" << jolt_forward.wall_clearance
               << " order delta=" << jolt_max_order_error << '\n';
+    const double jolt_microseconds_per_tick =
+        static_cast<double>(jolt_forward.elapsed_microseconds + jolt_reverse.elapsed_microseconds) / 256.0;
+    const double symmetric_microseconds_per_tick =
+        static_cast<double>(symmetric_forward.elapsed_microseconds + symmetric_reverse.elapsed_microseconds) / 256.0;
     std::cout << "10-player corridor symmetric: min separation=" << symmetric_forward.minimum_separation
               << " wall clearance=" << symmetric_forward.wall_clearance
               << " order delta=" << symmetric_max_order_error
               << " max solver passes=" << symmetric_forward.max_solver_passes << '\n';
+    std::cout << "10-player corridor cost: Jolt=" << jolt_microseconds_per_tick
+              << " us/tick symmetric=" << symmetric_microseconds_per_tick
+              << " us/tick ratio=" << symmetric_microseconds_per_tick / jolt_microseconds_per_tick << '\n';
     check(jolt_forward.minimum_separation > 0.63f && jolt_reverse.minimum_separation > 0.63f,
           "Jolt keeps ten players separated in a wall-ended corridor");
     check(jolt_forward.wall_clearance > -0.001f && jolt_reverse.wall_clearance > -0.001f,
