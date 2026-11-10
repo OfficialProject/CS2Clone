@@ -9,6 +9,7 @@ The first implementation milestone is a headless movement simulation, independen
 Implemented:
 - Fixed-step horizontal movement with acceleration, natural friction, active counter-strafing, and direction reversal.
 - Ground/air movement modes, a minimal jump arc, velocity caps, and a crouch stance transition.
+- Crouching lowers the target speed and gradually brakes existing momentum instead of snapping velocity to a lower cap.
 - A provisional movement-accuracy signal derived from actual horizontal speed; no weapon-specific recovery timer.
 - A command-line movement laboratory and dependency-free regression tests.
 
