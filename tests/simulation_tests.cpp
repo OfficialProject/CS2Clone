@@ -138,6 +138,30 @@ void test_crouch_transition_is_bounded() {
           "crouch transition reaches full stance");
 }
 
+MovementState run_release_scenario(const int rate) {
+    MovementConfig config;
+    config.fixed_dt = 1.0 / static_cast<double>(rate);
+    const MovementSimulator simulator{config};
+    MovementState state;
+    const int ticks_per_second = rate;
+    for (int i = 0; i < ticks_per_second; ++i) {
+        (void)simulator.step(state, {.forward = 1.0});
+    }
+    for (int i = 0; i < ticks_per_second; ++i) {
+        (void)simulator.step(state, {});
+    }
+    return state;
+}
+
+void test_128_and_256_hz_are_comparable() {
+    const auto at_128 = run_release_scenario(128);
+    const auto at_256 = run_release_scenario(256);
+    check(std::abs(at_128.position.y - at_256.position.y) < 0.03,
+          "128 Hz and 256 Hz produce close displacement for equal real-time inputs");
+    check(std::abs(at_128.velocity.y - at_256.velocity.y) < 0.03,
+          "128 Hz and 256 Hz produce close final speed for equal real-time inputs");
+}
+
 void test_replay_is_repeatable_with_same_build() {
     const MovementSimulator simulator;
     MovementState first;
@@ -204,6 +228,7 @@ int main() {
     test_jump_is_reported_once();
     test_air_speed_cap();
     test_crouch_transition_is_bounded();
+    test_128_and_256_hz_are_comparable();
     test_replay_is_repeatable_with_same_build();
     test_invalid_configuration_rejected();
     test_invalid_state_rejected();

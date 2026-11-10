@@ -1,6 +1,6 @@
 # CS2Clone
 
-A purpose-built competitive 5v5 FPS engine project. The long-term goal is a mechanically precise, server-authoritative tactical shooter; this repository is an early engineering prototype, not a playable game.
+A purpose-built competitive 5v5 FPS engine project. The long-term goal is a mechanically precise, server-authoritative tactical shooter; the current repository is an early engineering prototype, not a playable game.
 
 ## Current state
 
@@ -11,7 +11,7 @@ Implemented:
 - Ground/air movement modes, a minimal jump arc, velocity caps, and a crouch stance transition.
 - Crouching lowers the target speed and gradually brakes existing momentum instead of snapping velocity to a lower cap.
 - A provisional movement-accuracy signal derived from actual horizontal speed; no weapon-specific recovery timer.
-- A command-line movement laboratory and dependency-free regression tests.
+- A command-line movement laboratory with 128/256 Hz and release/counter-strafe/crouch scenarios, plus dependency-free regression tests.
 
 Not implemented:
 - World geometry, player/world collision, slopes, steps, or authoritative hitboxes.
@@ -26,7 +26,8 @@ Requires a C++23 compiler and CMake 3.25 or newer.
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/movement_lab
+./build/movement_lab --rate 128 --scenario release
+./build/movement_lab --rate 256 --scenario counter-strafe
 ```
 
 ## Principles

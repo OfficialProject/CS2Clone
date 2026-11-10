@@ -48,6 +48,16 @@ These are not claims about real-world units, CS:GO/CS2 values, or a balanced fin
 - No network prediction, reconciliation, rewind, or server-authority tests exist yet.
 - The accuracy signal is diagnostic only and must not be wired into production weapons until grounded/airborne/stance semantics are specified and validated.
 
+## Laboratory
+
+The movement_lab executable writes per-tick CSV traces. It accepts a 128 Hz or 256 Hz fixed-step rate and one of three scenarios:
+
+- release: accelerate for one second, then release movement input.
+- counter-strafe: accelerate for one second, then apply the opposite direction.
+- crouch: accelerate, enter crouch while moving, then remain crouched with no directional input.
+
+These scenarios are controlled comparisons, not a complete benchmark suite.
+
 ## Required experiments before tuning is accepted
 
 - Compare 128 Hz and 256 Hz using equivalent real-time inputs; report position/velocity error, stop time, stop distance, CPU cost, and replay consistency.
