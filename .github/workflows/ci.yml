@@ -12,7 +12,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
@@ -21,12 +21,16 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure
 
   jolt-collision-lab:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Configure Jolt experiment
         run: cmake -S . -B build-jolt -DCMAKE_BUILD_TYPE=Release -DCS2CLONE_BUILD_JOLT_LAB=ON
       - name: Build Jolt experiment
-        run: cmake --build build-jolt --parallel 2
+        run: cmake --build build-jolt --config Release --parallel 2
       - name: Test Jolt collision laboratory
-        run: ctest --test-dir build-jolt --output-on-failure
+        run: ctest --test-dir build-jolt -C Release --output-on-failure
