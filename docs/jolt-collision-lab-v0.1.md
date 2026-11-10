@@ -24,22 +24,39 @@ The experiment does not use Jolt to decide acceleration, friction, counter-straf
 2. Driving into a wall and verifying the capsule cannot pass through it.
 3. Traversing a three-step staircase using a bounded step-up setting.
 4. Rejecting a standing-shape transition beneath a low ceiling while retaining the crouched shape.
-5. Comparing Jolt's sequential CharacterVirtual collision interface with an engine-owned symmetric capsule-pair resolver under reversed update order.
+5. Comparing Jolt's sequential CharacterVirtual collision interface with an engine-owned symmetric capsule-pair resolver under reversed update order:
+   - Equal head-on movement (2, -2 simulation units/s).
+   - One character moving into a stationary character (2, 0).
+   - Unequal head-on movement (1, -3).
 6. Saving, restoring, and replaying CharacterVirtual state in a static world.
+
+## First measured player-collision baseline
+
+All three scenarios were run at 128 Hz, with the update order reversed between otherwise identical runs. The same results were observed on Windows, Linux, and macOS.
+
+| Scenario | Jolt simple interface: left/right order delta | Symmetric resolver: left/right order delta |
+|---|---:|---:|
+| Equal head-on | 0.000625253 / 0.000625253 | 0 / 0 |
+| Moving into stationary | 0 / 0.015625 | 0 / 0 |
+| Unequal head-on | 0.0156381 / 0.000013113 | 0 / 0 |
+
+The Jolt interface prevents overlap and produces identical measurements across the three tested platforms. However, the asymmetric scenarios expose a small, repeatable update-order difference. In the moving-versus-stationary case, 0.015625 simulation units equals one 2-unit/s movement step at 128 Hz. A fixed player update order would make this repeatable, but it would also give a systematic priority to whichever player is updated first or last.
+
+The prototype symmetric post-step resolver removes the measured order difference in these open-floor pair tests. This does **not** establish that it is ready for gameplay: it has not yet been tested with walls, stairs, many players, or a full world-collision projection pass.
 
 ## Compatibility and deterministic-build choices
 
-The experiment pins Jolt v5.6.0 and enables Jolt's CROSS_PLATFORM_DETERMINISTIC option. Jolt's optional SSE4.1, SSE4.2, AVX, AVX2, AVX512, LZCNT, TZCNT, F16C, and FMADD paths are disabled so the test build remains compatible with the SSE2 baseline on x86. Unused DirectX, Vulkan, Metal, CPU-compute, and ObjectStream features are disabled. The Jolt library uses the same dynamic MSVC runtime as the engine to avoid mixing CRT heaps across static-library boundaries. This is a compatibility baseline, not a final performance configuration. Runtime CPU dispatch or multiple optimized builds can be evaluated later without raising the minimum CPU requirement.
+The experiment pins Jolt v5.6.0 and enables Jolt's CROSS_PLATFORM_DETERMINISTIC option. Jolt's optional SSE4.1, SSE4.2, AVX, AVX2, AVX512, LZCNT, TZCNT, F16C, and FMADD paths are disabled so the test build remains compatible with the SSE2 baseline on x86. Unused DirectX, Vulkan, Metal, CPU-compute, and ObjectStream features are disabled. The Jolt library uses the same dynamic MSVC runtime as the engine to avoid mixing CRT heaps across static-library boundaries. The optional collision lab currently builds and passes CI on Windows, Linux, and macOS. This is a compatibility baseline, not a final performance configuration. Runtime CPU dispatch or multiple optimized builds can be evaluated later without raising the minimum CPU requirement.
 
 ## Known limitations
 
 - This is not yet the game's player controller and does not replace the existing 2D movement prototype.
-- Only static box geometry is used. No BSP/mesh map collision, dynamic doors, moving platforms, or map streaming is covered.
-- The current tests do not establish cross-platform bit-identical CharacterVirtual replay. They only test save/restore within one build.
+- Only static box geometry is used. No BSP/mesh map collision, dynamic doors, moving platforms, slopes, or map streaming is covered.
+- The current tests do not establish cross-platform bit-identical CharacterVirtual replay. They only test save/restore within one build; the matching player-collision measurements are a narrower cross-platform check.
 - CharacterVirtual is not a rigid body in the main PhysicsSystem. It requires application-managed updates and explicit state capture; other rigid bodies do not automatically collide with it unless a separate character-collision path or inner-body proxy is used.
 - The custom pair resolver is a two-player open-floor prototype. It has not been tested with walls, stairs, many players, or network prediction.
 - The lab has not yet been benchmarked for CPU cost, memory, contact count, or worst-case map complexity.
 
 ## Decision gate
 
-Do not merge the Jolt adapter into the main engine until the optional CI build is green on Windows, Linux, and macOS, the geometry cases are stable, and a custom kinematic controller using Jolt queries has been compared against CharacterVirtual on the same scenes. The main branch continues to build and test without fetching Jolt.
+Do not merge the Jolt adapter into the main engine until the optional CI build is green on Windows, Linux, and macOS, the geometry cases are stable, the player-collision policy is validated against world geometry and a 10-player scenario, and a custom kinematic controller using Jolt queries has been compared against CharacterVirtual on the same scenes. The main branch continues to build and test without fetching Jolt.
