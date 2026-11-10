@@ -117,6 +117,9 @@ public:
 
     [[nodiscard]] JPH::PhysicsSystem& physics() noexcept { return physics_; }
     [[nodiscard]] JPH::TempAllocatorImpl& allocator() noexcept { return *allocator_; }
+    [[nodiscard]] JPH::CharacterVsCharacterCollisionSimple& character_collision() noexcept {
+        return character_collision_;
+    }
 
 private:
     BroadPhaseLayerInterfaceImpl broad_phase_layers_;
@@ -124,6 +127,7 @@ private:
     ObjectLayerPairFilterImpl object_layer_pair_filter_;
     std::unique_ptr<JPH::TempAllocatorImpl> allocator_;
     JPH::PhysicsSystem physics_;
+    JPH::CharacterVsCharacterCollisionSimple character_collision_;
     std::vector<JPH::BodyID> body_ids_;
 };
 
@@ -150,6 +154,10 @@ public:
         settings.mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -0.3f);
         character_ = new JPH::CharacterVirtual(&settings, position, JPH::Quat::sIdentity(),
                                                 &world_.physics());
+        if (use_jolt_character_collision_) {
+            character_->SetCharacterVsCharacterCollision(&world_.character_collision());
+            world_.character_collision().Add(character_.GetPtr());
+        }
         update_settings_.mStickToFloorStepDown = JPH::Vec3(0.0f, -0.5f, 0.0f);
         update_settings_.mWalkStairsStepUp = JPH::Vec3(0.0f, 0.4f, 0.0f);
     }
