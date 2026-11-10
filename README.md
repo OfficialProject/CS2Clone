@@ -1,6 +1,6 @@
 # CS2Clone
 
-A purpose-built competitive 5v5 FPS engine project. The long-term goal is a mechanically precise, server-authoritative tactical shooter; the current repository is an early engineering prototype, not a playable game.
+A purpose-built competitive 5v5 FPS engine project. The long-term goal is a mechanically precise, server-authoritative tactical shooter; this repository is an early engineering prototype, not a playable game.
 
 ## Current state
 
@@ -29,6 +29,18 @@ ctest --test-dir build --output-on-failure
 ./build/movement_lab --rate 128 --scenario release
 ./build/movement_lab --rate 256 --scenario counter-strafe
 ```
+
+## Optional Jolt collision experiment
+
+The isolated Jolt CharacterVirtual experiment is available on the experiment/jolt-character-controller branch. It is not part of the default engine build and is not yet adopted as the production controller.
+
+```sh
+cmake -S . -B build-jolt -DCMAKE_BUILD_TYPE=Release -DCS2CLONE_BUILD_JOLT_LAB=ON
+cmake --build build-jolt --parallel 2
+ctest --test-dir build-jolt --output-on-failure
+```
+
+The optional configure step fetches the pinned Jolt v5.6.0 source. The default build does not require a network connection or Jolt.
 
 ## Principles
 

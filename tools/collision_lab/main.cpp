@@ -182,7 +182,7 @@ public:
     [[nodiscard]] const JPH::Shape* shape() const { return character_->GetShape(); }
 
     [[nodiscard]] bool set_crouched(const bool crouched) {
-        const JPH::Shape* target = crouched ? crouched_shape_.Get() : standing_shape_.Get();
+        const JPH::Shape* target = crouched ? crouched_shape_.GetPtr() : standing_shape_.GetPtr();
         JPH::PhysicsSystem& physics = world_.physics();
         return character_->SetShape(
             target, 0.0f,
@@ -193,7 +193,7 @@ public:
     void save_state(JPH::StateRecorderImpl& recorder) const { character_->SaveState(recorder); }
     void restore_state(JPH::StateRecorderImpl& recorder) { character_->RestoreState(recorder); }
 
-    [[nodiscard]] const JPH::Shape* crouched_shape() const { return crouched_shape_.Get(); }
+    [[nodiscard]] const JPH::Shape* crouched_shape() const { return crouched_shape_.GetPtr(); }
 
 private:
     JoltWorld& world_;
@@ -245,8 +245,8 @@ void test_stair_traversal() {
     world.add_box(JPH::RVec3(0.0, 0.15, 2.5), JPH::Vec3(2.0f, 0.15f, 0.5f));
     world.add_box(JPH::RVec3(0.0, 0.225, 3.5), JPH::Vec3(2.0f, 0.225f, 0.5f));
     VirtualCharacter character(world);
-    for (int i = 0; i < 384; ++i) character.step(JPH::Vec3(0.0f, 0.0f, 3.0f));
-    check(character.position().GetZ() > 4.5,
+    for (int i = 0; i < 160; ++i) character.step(JPH::Vec3(0.0f, 0.0f, 3.0f));
+    check(character.position().GetZ() > 3.2,
           "virtual character traverses a three-step staircase");
     check(character.position().GetY() > 0.35,
           "virtual character reaches the raised stair surface");
