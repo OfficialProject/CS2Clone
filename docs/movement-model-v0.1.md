@@ -56,7 +56,7 @@ The movement_lab executable writes per-tick CSV traces. It accepts a 128 Hz or 2
 - counter-strafe: accelerate for one second, then apply the opposite direction.
 - crouch: accelerate, enter crouch while moving, then remain crouched with no directional input.
 
-These scenarios are controlled comparisons, not a complete benchmark suite.
+These scenarios are controlled comparisons, not a complete benchmark suite. Initial measured outputs are recorded in movement-baseline-results-v0.1.md.
 
 ## Required experiments before tuning is accepted
 
