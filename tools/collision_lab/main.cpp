@@ -210,6 +210,14 @@ public:
     [[nodiscard]] std::uint32_t stable_id() const noexcept { return stable_id_; }
     [[nodiscard]] float character_padding() const { return character_->GetCharacterPadding(); }
     void set_position(const JPH::RVec3& position) { character_->SetPosition(position); }
+    void project_world() {
+        const JPH::Vec3 saved_velocity = character_->GetLinearVelocity();
+        character_->SetLinearVelocity(JPH::Vec3::sZero());
+        character_->Update(FixedDt, JPH::Vec3::sZero(),
+                           world_.physics().GetDefaultBroadPhaseLayerFilter(Layers::Moving),
+                           world_.physics().GetDefaultLayerFilter(Layers::Moving), {}, {}, world_.allocator());
+        character_->SetLinearVelocity(saved_velocity);
+    }
 
     [[nodiscard]] bool set_crouched(const bool crouched) {
         const JPH::Shape* target = crouched ? crouched_shape_.GetPtr() : standing_shape_.GetPtr();
@@ -517,6 +525,76 @@ void test_player_player_collision() {
                               JPH::Vec3(-3.0f, 0.0f, 0.0f));
 }
 
+
+struct WallPairResult {
+    JPH::RVec3 left;
+    JPH::RVec3 right;
+    float wall_clearance = 0.0f;
+    float player_separation = 0.0f;
+};
+
+WallPairResult run_wall_pinned_pair(const bool use_jolt_collision, const bool right_first,
+                                    const bool project_world) {
+    JoltWorld world;
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
+    constexpr float wall_right_face = -0.6f;
+    world.add_box(JPH::RVec3(-0.7f, 1.0f, 0.0f), JPH::Vec3(0.1f, 1.0f, 5.0f));
+
+    VirtualCharacter left(world, JPH::RVec3(-0.28f, 0.0f, 0.0f), false, 1, use_jolt_collision);
+    VirtualCharacter right(world, JPH::RVec3(0.5f, 0.0f, 0.0f), false, 2, use_jolt_collision);
+    for (int tick = 0; tick < 128; ++tick) {
+        if (right_first) {
+            right.step(JPH::Vec3(-2.0f, 0.0f, 0.0f));
+            left.step(JPH::Vec3::sZero());
+        } else {
+            left.step(JPH::Vec3::sZero());
+            right.step(JPH::Vec3(-2.0f, 0.0f, 0.0f));
+        }
+        if (!use_jolt_collision) {
+            resolve_player_pair_symmetrically(left, right);
+            if (project_world) {
+                left.project_world();
+                right.project_world();
+            }
+        }
+    }
+
+    const JPH::AABox left_bounds = left.world_bounds();
+    const float wall_clearance = static_cast<float>(left_bounds.mMin.GetX()) -
+                                 left.character_padding() - wall_right_face;
+    const float player_separation = distance(left.position(), right.position());
+    return WallPairResult{left.position(), right.position(), wall_clearance, player_separation};
+}
+
+void test_player_collision_against_wall() {
+    const WallPairResult jolt_forward = run_wall_pinned_pair(true, false, false);
+    const WallPairResult jolt_reverse = run_wall_pinned_pair(true, true, false);
+    const WallPairResult raw_forward = run_wall_pinned_pair(false, false, false);
+    const WallPairResult projected_forward = run_wall_pinned_pair(false, false, true);
+    const WallPairResult projected_reverse = run_wall_pinned_pair(false, true, true);
+
+    const float projected_order_error = std::max(
+        distance(projected_forward.left, projected_reverse.left),
+        distance(projected_forward.right, projected_reverse.right));
+
+    std::cout << "Wall-pinned pair clearance: Jolt=" << jolt_forward.wall_clearance
+              << " raw symmetric=" << raw_forward.wall_clearance
+              << " projected symmetric=" << projected_forward.wall_clearance << '\\n';
+    std::cout << "Wall-pinned pair separation: Jolt=" << jolt_forward.player_separation
+              << " projected symmetric=" << projected_forward.player_separation << '\\n';
+    std::cout << "Wall-pinned symmetric solver update-order delta: " << projected_order_error << '\\n';
+
+    check(jolt_forward.wall_clearance > -0.001f && jolt_reverse.wall_clearance > -0.001f,
+          "Jolt character collision keeps the wall-pinned player outside the wall");
+    check(projected_forward.wall_clearance > -0.001f && projected_reverse.wall_clearance > -0.001f,
+          "world projection prevents symmetric player resolution from pushing through a wall");
+    check(projected_forward.player_separation > 0.63f && projected_reverse.player_separation > 0.63f,
+          "world-projected symmetric solver keeps players separated");
+    check(projected_order_error < 0.001f,
+          "world-projected wall collision is independent of update order");
+}
+
+
 void test_character_state_replay() {
     JoltWorld world;
     world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
@@ -548,6 +626,7 @@ int main() {
     test_crouch_shape_clearance();
     test_player_player_collision();
     test_ten_player_collision();
+    test_player_collision_against_wall();
     test_character_state_replay();
 
     if (failures != 0) {
