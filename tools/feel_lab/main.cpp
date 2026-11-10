@@ -73,8 +73,8 @@ int main() {
             accumulator = std::min(accumulator + frame_dt, 0.15);
             while (accumulator >= cfg.fixed_dt) {
                 MovementInput input;
-                input.forward = static_cast<double>(f * cs + r * sn);
-                input.right = static_cast<double>(f * sn - r * cs);
+                input.forward = static_cast<double>(-f * cs + r * sn);
+                input.right = static_cast<double>(f * sn + r * cs);
                 input.jump_pressed = jump && !prev_jump;
                 input.crouch_held = crouch;
                 const MovementState old = state;
