@@ -446,7 +446,7 @@ void test_ten_player_collision() {
           "Jolt character collision keeps ten players from overlapping");
     check(jolt_max_order_error < 0.05f,
           "Jolt ten-player collision is sufficiently stable under reversed update order");
-    check(symmetric_forward.minimum_separation > 0.63f && symmetric_reverse.minimum_separation > 0.63f,
+    check(symmetric_forward.minimum_separation > 0.639f && symmetric_reverse.minimum_separation > 0.639f,
           "symmetric resolver respects capsule padding in a ten-player group");
     check(symmetric_max_order_error < 0.001f,
           "symmetric ten-player collision is independent of update order");
@@ -499,7 +499,7 @@ void test_player_pair_scenario(const std::string_view label,
           "Jolt simple character collision prevents capsules from passing through each other");
     check(jolt_left_order_error < 0.05f && jolt_right_order_error < 0.05f,
           "Jolt simple character collision is independent of update order");
-    check(symmetric_separation > 0.63f,
+    check(symmetric_separation > 0.639f,
           "symmetric player collision respects capsule padding and prevents overlap");
     check(symmetric_left_order_error < 0.05f && symmetric_right_order_error < 0.05f,
           "symmetric player collision is independent of character update order");
