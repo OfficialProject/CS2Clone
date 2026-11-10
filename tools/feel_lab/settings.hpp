@@ -61,14 +61,15 @@ struct Settings {
         sensitivity = value;
         keys = saved;
         std::string version;
-        if (file >> version && version=="preferences-v1") preferences.read(file);
+        if (file >> version && (version=="preferences-v1" || version=="preferences-v2"))
+            preferences.read(file,version=="preferences-v2");
     }
 
     void save() const {
         std::ofstream file("feel-lab-settings.txt");
         file << sensitivity;
         for (const auto key : keys) file << ' ' << key;
-        file << '\n' << "preferences-v1 ";
+        file << '\n' << "preferences-v2 ";
         preferences.write(file);
     }
 
@@ -233,13 +234,22 @@ struct Settings {
                 if (!preferences.fullscreen) preferences.apply_window();
                 save();
             }
-            adjust(238,"Brightness",preferences.brightness,60,140,"%");
-            adjust(277,"Vertical field of view",preferences.fov,60,110);
+            if (button_row(238,"Aspect ratio",Preferences::aspect_names[static_cast<std::size_t>(preferences.aspect)])) {
+                preferences.aspect=(preferences.aspect+1)%static_cast<int>(Preferences::aspect_names.size());
+                save();
+            }
+            const auto render_size=preferences.render_size();
+            if (button_row(277,"Render resolution",TextFormat("%d x %d",render_size.width,render_size.height))) {
+                preferences.resolution=(preferences.resolution+1)%
+                    static_cast<int>(Preferences::render_modes.front().size());
+                save();
+            }
+            adjust(316,"Brightness",preferences.brightness,60,140,"%");
             ui::label(TextFormat("Monitor refresh rate: %d Hz",GetMonitorRefreshRate(GetCurrentMonitor())),
-                      left+20,320,17,ui::muted);
+                      left+20,360,17,ui::muted);
         } else if (category==Category::Advanced) {
             if (toggle(160,"Vertical sync",preferences.vsync)) preferences.apply_window();
-            toggle(199,"4x MSAA (next launch)",preferences.msaa);
+            toggle(199,"4x MSAA at native size (restart)",preferences.msaa);
             adjust(238,"Maximum FPS in game",preferences.match_fps,30,500);
             adjust(277,"Maximum FPS in menus",preferences.menu_fps,30,500);
         } else if (category==Category::Hud) {

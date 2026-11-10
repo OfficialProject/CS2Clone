@@ -187,6 +187,7 @@ int run_lab(int argc, char* argv[]) {
     reset_position(state);
     float yaw = map.loaded() ? map.spawn_yaw : 0.0f, pitch = 0.0f;
     int capture_frames = 0;
+    RenderTexture2D render_target{};
     const auto target_positions = map.loaded() ? mirage_targets(map) : range_targets;
     std::array<bool,5> targets{};
     int ammunition = magazine_size;
@@ -377,9 +378,22 @@ int run_lab(int argc, char* argv[]) {
         const float eye = map.loaded() ? (64.0f-18.0f*static_cast<float>(state.crouch_fraction))*static_cast<float>(MovementConfig::source_unit) : standing_eye+(crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
         const Vector3 pos = {static_cast<float>(state.position.x),eye+static_cast<float>(state.vertical_position),static_cast<float>(state.position.y)};
         const Vector3 dir = {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)};
-        Camera3D camera={pos,Vector3Add(pos,dir),{0,1,0},static_cast<float>(options.fov),CAMERA_PERSPECTIVE};
-        if (overview && map.loaded()) camera={{0,105,0},{0,0,0},{0,0,-1},65,CAMERA_PERSPECTIVE};
-        BeginDrawing();
+        Camera3D camera={pos,Vector3Add(pos,dir),{0,1,0},feel_lab::Preferences::vertical_fov,CAMERA_PERSPECTIVE};
+        if (overview && map.loaded()) camera={{0,105,0},{0,0,0},{0,0,-1},feel_lab::Preferences::vertical_fov,CAMERA_PERSPECTIVE};
+        const auto resolution=options.render_size();
+        const int screen_width=GetScreenWidth();
+        const int screen_height=GetScreenHeight();
+        const bool scale_scene=resolution.width!=screen_width || resolution.height!=screen_height;
+        if (scale_scene && (render_target.texture.width!=resolution.width ||
+                            render_target.texture.height!=resolution.height)) {
+            if (render_target.id!=0) UnloadRenderTexture(render_target);
+            render_target=LoadRenderTexture(resolution.width,resolution.height);
+            if (!IsRenderTextureValid(render_target))
+                throw std::runtime_error("Could not allocate the selected render resolution");
+            SetTextureFilter(render_target.texture,TEXTURE_FILTER_BILINEAR);
+        }
+        if (scale_scene) BeginTextureMode(render_target);
+        else BeginDrawing();
         ClearBackground({155,185,204,255});
         BeginMode3D(camera);
         if (map.loaded()) map.draw();
@@ -404,6 +418,19 @@ int run_lab(int argc, char* argv[]) {
             }
         }
         EndMode3D();
+        if (scale_scene) {
+            EndTextureMode();
+            BeginDrawing();
+            ClearBackground(BLACK);
+            const float scale=std::min(static_cast<float>(screen_width)/static_cast<float>(resolution.width),
+                                       static_cast<float>(screen_height)/static_cast<float>(resolution.height));
+            const float width=static_cast<float>(resolution.width)*scale;
+            const float height=static_cast<float>(resolution.height)*scale;
+            DrawTexturePro(render_target.texture,
+                           {0,0,static_cast<float>(resolution.width),-static_cast<float>(resolution.height)},
+                           {(static_cast<float>(screen_width)-width)/2,(static_cast<float>(screen_height)-height)/2,width,height},
+                           {0,0},0,WHITE);
+        }
         if (options.brightness!=100) {
             const auto alpha=static_cast<unsigned char>(std::abs(options.brightness-100)*2);
             const auto tone=static_cast<unsigned char>(options.brightness>100?255:0);
@@ -463,6 +490,7 @@ int run_lab(int argc, char* argv[]) {
             const bool saved=ExportImage(frame,capture_path.string().c_str());
             UnloadImage(frame);
             if (!saved) {
+                if (render_target.id!=0) UnloadRenderTexture(render_target);
                 map.unload();
                 feel_lab::ui::unload();
                 CloseWindow();
@@ -471,6 +499,7 @@ int run_lab(int argc, char* argv[]) {
             break;
         }
     }
+    if (render_target.id!=0) UnloadRenderTexture(render_target);
     map.unload();
     feel_lab::ui::unload();
     CloseWindow();
