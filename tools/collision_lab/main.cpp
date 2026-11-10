@@ -12,6 +12,8 @@
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 
 #include <cstdarg>
+#include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cmath>
 #include <stdexcept>
@@ -135,8 +137,11 @@ JPH::RefConst<JPH::Shape> make_capsule(const float cylinder_height, const float 
 class VirtualCharacter {
 public:
     explicit VirtualCharacter(JoltWorld& world, const JPH::RVec3& position = JPH::RVec3::sZero(),
-                              const bool start_crouched = false)
+                              const bool start_crouched = false, const std::uint32_t stable_id = 0,
+                              const bool use_jolt_character_collision = true)
         : world_(world),
+          stable_id_(stable_id),
+          use_jolt_character_collision_(use_jolt_character_collision),
           standing_shape_(make_capsule(1.0f, 0.3f)),
           crouched_shape_(make_capsule(0.4f, 0.3f)) {
         JPH::CharacterVirtualSettings settings;
@@ -147,6 +152,12 @@ public:
                                                 &world_.physics());
         update_settings_.mStickToFloorStepDown = JPH::Vec3(0.0f, -0.5f, 0.0f);
         update_settings_.mWalkStairsStepUp = JPH::Vec3(0.0f, 0.4f, 0.0f);
+    }
+
+    ~VirtualCharacter() {
+        if (use_jolt_character_collision_) {
+            world_.character_collision().Remove(character_.GetPtr());
+        }
     }
 
     void step(const JPH::Vec3& desired_horizontal_velocity, const bool jump = false) {
@@ -180,6 +191,12 @@ public:
         return character_->GetGroundState();
     }
     [[nodiscard]] const JPH::Shape* shape() const { return character_->GetShape(); }
+    [[nodiscard]] JPH::AABox world_bounds() const {
+        return character_->GetShape()->GetWorldSpaceBounds(
+            character_->GetCenterOfMassTransform(), JPH::Vec3::sReplicate(1.0f));
+    }
+    [[nodiscard]] std::uint32_t stable_id() const noexcept { return stable_id_; }
+    void set_position(const JPH::RVec3& position) { character_->SetPosition(position); }
 
     [[nodiscard]] bool set_crouched(const bool crouched) {
         const JPH::Shape* target = crouched ? crouched_shape_.GetPtr() : standing_shape_.GetPtr();
@@ -197,6 +214,8 @@ public:
 
 private:
     JoltWorld& world_;
+    std::uint32_t stable_id_;
+    bool use_jolt_character_collision_;
     JPH::RefConst<JPH::Shape> standing_shape_;
     JPH::RefConst<JPH::Shape> crouched_shape_;
     JPH::Ref<JPH::CharacterVirtual> character_;
@@ -265,6 +284,116 @@ void test_crouch_shape_clearance() {
           "failed stance transition preserves the valid crouched shape");
 }
 
+
+struct PairResult {
+    JPH::RVec3 left;
+    JPH::RVec3 right;
+};
+
+void resolve_player_pair_symmetrically(VirtualCharacter& first, VirtualCharacter& second) {
+    const JPH::RVec3 first_position = first.position();
+    const JPH::RVec3 second_position = second.position();
+    const JPH::AABox first_bounds = first.world_bounds();
+    const JPH::AABox second_bounds = second.world_bounds();
+
+    const float first_radius = std::max({
+        static_cast<float>(first_bounds.mMax.GetX() - first_position.GetX()),
+        static_cast<float>(first_position.GetX() - first_bounds.mMin.GetX()),
+        static_cast<float>(first_bounds.mMax.GetZ() - first_position.GetZ()),
+        static_cast<float>(first_position.GetZ() - first_bounds.mMin.GetZ())});
+    const float second_radius = std::max({
+        static_cast<float>(second_bounds.mMax.GetX() - second_position.GetX()),
+        static_cast<float>(second_position.GetX() - second_bounds.mMin.GetX()),
+        static_cast<float>(second_bounds.mMax.GetZ() - second_position.GetZ()),
+        static_cast<float>(second_position.GetZ() - second_bounds.mMin.GetZ())});
+
+    const float first_segment_min = static_cast<float>(first_bounds.mMin.GetY()) + first_radius;
+    const float first_segment_max = static_cast<float>(first_bounds.mMax.GetY()) - first_radius;
+    const float second_segment_min = static_cast<float>(second_bounds.mMin.GetY()) + second_radius;
+    const float second_segment_max = static_cast<float>(second_bounds.mMax.GetY()) - second_radius;
+
+    float vertical_delta = 0.0f;
+    if (first_segment_max < second_segment_min) {
+        vertical_delta = second_segment_min - first_segment_max;
+    } else if (second_segment_max < first_segment_min) {
+        vertical_delta = second_segment_max - first_segment_min;
+    }
+
+    const float dx = static_cast<float>(second_position.GetX() - first_position.GetX());
+    const float dz = static_cast<float>(second_position.GetZ() - first_position.GetZ());
+    const float separation = std::sqrt(dx * dx + vertical_delta * vertical_delta + dz * dz);
+    const float penetration = first_radius + second_radius - separation;
+    if (penetration <= 0.0f) return;
+
+    float normal_x = 0.0f;
+    float normal_y = 0.0f;
+    float normal_z = 0.0f;
+    if (separation > 1.0e-6f) {
+        normal_x = dx / separation;
+        normal_y = vertical_delta / separation;
+        normal_z = dz / separation;
+    } else {
+        normal_x = first.stable_id() < second.stable_id() ? 1.0f : -1.0f;
+    }
+
+    const float correction = 0.5f * penetration;
+    first.set_position(JPH::RVec3(
+        first_position.GetX() - normal_x * correction,
+        first_position.GetY() - normal_y * correction,
+        first_position.GetZ() - normal_z * correction));
+    second.set_position(JPH::RVec3(
+        second_position.GetX() + normal_x * correction,
+        second_position.GetY() + normal_y * correction,
+        second_position.GetZ() + normal_z * correction));
+}
+
+PairResult run_player_pair(const bool use_jolt_collision, const bool right_first) {
+    JoltWorld world;
+    world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
+    VirtualCharacter left(world, JPH::RVec3(-1.0f, 0.0f, 0.0f), false, 1, use_jolt_collision);
+    VirtualCharacter right(world, JPH::RVec3(1.0f, 0.0f, 0.0f), false, 2, use_jolt_collision);
+    for (int i = 0; i < 128; ++i) {
+        if (right_first) {
+            right.step(JPH::Vec3(-2.0f, 0.0f, 0.0f));
+            left.step(JPH::Vec3(2.0f, 0.0f, 0.0f));
+        } else {
+            left.step(JPH::Vec3(2.0f, 0.0f, 0.0f));
+            right.step(JPH::Vec3(-2.0f, 0.0f, 0.0f));
+        }
+        if (!use_jolt_collision) resolve_player_pair_symmetrically(left, right);
+    }
+    return PairResult{left.position(), right.position()};
+}
+
+void test_player_player_collision() {
+    const PairResult jolt_left_first = run_player_pair(true, false);
+    const PairResult jolt_right_first = run_player_pair(true, true);
+    const float jolt_left_order_error = distance(jolt_left_first.left, jolt_right_first.left);
+    const float jolt_right_order_error = distance(jolt_left_first.right, jolt_right_first.right);
+
+    const PairResult symmetric_left_first = run_player_pair(false, false);
+    const PairResult symmetric_right_first = run_player_pair(false, true);
+    const float symmetric_left_order_error = distance(symmetric_left_first.left, symmetric_right_first.left);
+    const float symmetric_right_order_error = distance(symmetric_left_first.right, symmetric_right_first.right);
+    const float symmetric_separation = static_cast<float>(
+        symmetric_left_first.right.GetX() - symmetric_left_first.left.GetX());
+    const float jolt_left_first_separation = static_cast<float>(
+        jolt_left_first.right.GetX() - jolt_left_first.left.GetX());
+    const float jolt_right_first_separation = static_cast<float>(
+        jolt_right_first.right.GetX() - jolt_right_first.left.GetX());
+
+    std::cout << "CharacterVirtual simple pair order delta: left=" << jolt_left_order_error
+              << " right=" << jolt_right_order_error << '\n';
+    std::cout << "Symmetric pair solver order delta: left=" << symmetric_left_order_error
+              << " right=" << symmetric_right_order_error << '\n';
+    check(jolt_left_first_separation > 0.5f && jolt_right_first_separation > 0.5f,
+          "Jolt simple character collision prevents capsules from passing through each other");
+    check(symmetric_separation > 0.5f,
+          "symmetric player collision prevents two capsules from passing through each other");
+    check(symmetric_left_order_error < 0.05f && symmetric_right_order_error < 0.05f,
+          "symmetric player collision is independent of character update order");
+}
+
 void test_character_state_replay() {
     JoltWorld world;
     world.add_box(JPH::RVec3(0.0f, -0.5f, 0.0f), JPH::Vec3(20.0f, 0.5f, 20.0f));
@@ -294,6 +423,7 @@ int main() {
     test_wall_collision();
     test_stair_traversal();
     test_crouch_shape_clearance();
+    test_player_player_collision();
     test_character_state_replay();
 
     if (failures != 0) {
