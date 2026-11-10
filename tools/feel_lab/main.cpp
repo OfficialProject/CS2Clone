@@ -163,14 +163,20 @@ int run_lab(int argc, char* argv[]) {
         std::printf("Map validated. Jump landed; walked %.2f units from T spawn.\n",traveled);
         return 0;
     }
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | (capture_path.empty() ? 0u : FLAG_WINDOW_HIDDEN));
-    InitWindow(1280, 720, "CS2Clone | Movement Feel Lab");
-    SetTargetFPS(240);
-    feel_lab::ui::load();
-    SetExitKey(KEY_NULL);
-    SetWindowMinSize(520, 580);
     feel_lab::Settings settings;
     settings.load();
+    const auto& options=settings.preferences;
+    const auto window_size=feel_lab::Preferences::sizes[static_cast<std::size_t>(options.window_size)];
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | (options.msaa ? FLAG_MSAA_4X_HINT : 0u) |
+                   (options.vsync ? FLAG_VSYNC_HINT : 0u) |
+                   (capture_path.empty() ? 0u : FLAG_WINDOW_HIDDEN));
+    InitWindow(window_size[0],window_size[1],"CS2Clone | Movement Feel Lab");
+    SetExitKey(KEY_NULL);
+    SetWindowMinSize(520,580);
+    if (options.fullscreen && capture_path.empty()) options.apply_window();
+    feel_lab::ui::load();
+    int frame_cap=options.menu_fps;
+    SetTargetFPS(frame_cap);
     EnableCursor();
     if (map.loaded()) map.upload();
     MovementState state;
@@ -255,7 +261,7 @@ int run_lab(int argc, char* argv[]) {
         if (accepting_input) {
             const Vector2 mouse = GetMouseDelta();
             yaw += mouse.x * 0.0022f * settings.sensitivity;
-            pitch = std::clamp(pitch - mouse.y * 0.0022f * settings.sensitivity, -1.45f, 1.45f);
+            pitch = std::clamp(pitch - mouse.y * 0.0022f * settings.sensitivity * (options.invert_mouse ? -1.0f : 1.0f), -1.45f, 1.45f);
             const float sn = std::sin(yaw), cs = std::cos(yaw);
             using Controls = feel_lab::Settings;
             pending_jump = pending_jump || settings.pressed(Controls::Jump);
@@ -371,7 +377,7 @@ int run_lab(int argc, char* argv[]) {
         const float eye = map.loaded() ? (64.0f-18.0f*static_cast<float>(state.crouch_fraction))*static_cast<float>(MovementConfig::source_unit) : standing_eye+(crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
         const Vector3 pos = {static_cast<float>(state.position.x),eye+static_cast<float>(state.vertical_position),static_cast<float>(state.position.y)};
         const Vector3 dir = {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)};
-        Camera3D camera={pos,Vector3Add(pos,dir),{0,1,0},80,CAMERA_PERSPECTIVE};
+        Camera3D camera={pos,Vector3Add(pos,dir),{0,1,0},static_cast<float>(options.fov),CAMERA_PERSPECTIVE};
         if (overview && map.loaded()) camera={{0,105,0},{0,0,0},{0,0,-1},65,CAMERA_PERSPECTIVE};
         BeginDrawing();
         ClearBackground({155,185,204,255});
@@ -398,28 +404,34 @@ int run_lab(int argc, char* argv[]) {
             }
         }
         EndMode3D();
+        if (options.brightness!=100) {
+            const auto alpha=static_cast<unsigned char>(std::abs(options.brightness-100)*2);
+            const auto tone=static_cast<unsigned char>(options.brightness>100?255:0);
+            DrawRectangle(0,0,GetScreenWidth(),GetScreenHeight(),{tone,tone,tone,alpha});
+        }
         const int cx=GetScreenWidth()/2,cy=GetScreenHeight()/2;
         if (!frontend.menu() && !settings.visible) {
-            const Color cross=last_hit_flash>0?GREEN:WHITE;
-            DrawLine(cx-11,cy,cx-4,cy,cross);DrawLine(cx+4,cy,cx+11,cy,cross);
-            DrawLine(cx,cy-11,cx,cy-4,cross);DrawLine(cx,cy+4,cx,cy+11,cross);
-            DrawRectangle(12,12,480,169,{12,18,26,190});
-            DrawText(map.loaded()?"MIRAGE  |  128 Hz movement lab":"MOVEMENT FEEL LAB  |  128 Hz simulation",24,20,19,RAYWHITE);
-            DrawText(TextFormat("Speed: %.2f  |  Crouch: %.0f%%  |  %s",
+            options.draw_crosshair(cx,cy,last_hit_flash>0);
+            const int margin=options.hud_margin;
+            const int offset=margin-12;
+            DrawRectangle(margin,margin,480,169,{12,18,26,190});
+            DrawText(map.loaded()?"MIRAGE  |  128 Hz movement lab":"MOVEMENT FEEL LAB  |  128 Hz simulation",
+                     24+offset,20+offset,19,RAYWHITE);
+            if (options.movement_stats) DrawText(TextFormat("Speed: %.2f  |  Crouch: %.0f%%  |  %s",
                 std::hypot(state.velocity.x,state.velocity.y),state.crouch_fraction*100,
-                state.on_ladder?"LADDER":state.mode==MovementMode::Grounded?"GROUND":"AIR"),24,51,18,RAYWHITE);
+                state.on_ladder?"LADDER":state.mode==MovementMode::Grounded?"GROUND":"AIR"),24+offset,51+offset,18,RAYWHITE);
             if (round.mode == GameMode::Practice) {
-                DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24,78,18,RAYWHITE);
+                DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24+offset,78+offset,18,RAYWHITE);
             } else {
                 const char* objective = round.mode==GameMode::Defuse ? "Defuse at A" :
                     round.phase==BombRound::Phase::Live ? "Plant at A or B" : "Bomb armed";
-                DrawText(TextFormat("%s  |  %.1f s",objective,round.remaining),24,78,18,RAYWHITE);
+                DrawText(TextFormat("%s  |  %.1f s",objective,round.remaining),24+offset,78+offset,18,RAYWHITE);
             }
             DrawText(reload_finish > 0 ? "Reloading..." : TextFormat("Ammo: %d/%d  |  Tab settings",ammunition,magazine_size),
-                     24,106,16,RAYWHITE);
+                     24+offset,106+offset,16,RAYWHITE);
             DrawText(TextFormat("%s reload  |  %s reset",feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reload]),
-                                feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reset])),24,127,16,RAYWHITE);
-            DrawText(TextFormat("%s: %s", feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Drills]), drill_status),24,151,16,RAYWHITE);
+                                feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Reset])),24+offset,127+offset,16,RAYWHITE);
+            DrawText(TextFormat("%s: %s", feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Drills]), drill_status),24+offset,151+offset,16,RAYWHITE);
             if (round.mode != GameMode::Practice && !frontend.menu()) {
                 const auto* action = feel_lab::Settings::key_label(settings.keys[feel_lab::Settings::Use]);
                 const bool defusing=round.mode==GameMode::Defuse;
@@ -430,7 +442,7 @@ int run_lab(int argc, char* argv[]) {
                 }
                 DrawText(TextFormat("Hold %s to %s",action,defusing?"defuse":"plant at a bombsite"),cx-130,cy+83,18,RAYWHITE);
             }
-            DrawFPS(GetScreenWidth()-100,20);
+            if (options.show_fps) DrawFPS(GetScreenWidth()-88-margin,margin);
         }
         const auto action=frontend.draw(settings,map.loaded(),round_won,result_text.c_str());
         if (settings.visible) settings.draw(was_settings && !was_rebinding);
@@ -440,6 +452,11 @@ int run_lab(int argc, char* argv[]) {
         if (action==Frontend::Action::Resume) {
             frontend.screen=Frontend::Screen::Match;
             DisableCursor();
+        }
+        const int desired_cap=frontend.menu() || settings.visible ? options.menu_fps : options.match_fps;
+        if (desired_cap!=frame_cap) {
+            frame_cap=desired_cap;
+            SetTargetFPS(frame_cap);
         }
         if (!capture_path.empty() && ++capture_frames == 3) {
             Image frame=LoadImageFromScreen();

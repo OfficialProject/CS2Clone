@@ -1,12 +1,13 @@
 #pragma once
 
-#include "ui.hpp"
+#include "preferences.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <fstream>
+#include <string>
 
 namespace feel_lab {
 
@@ -22,9 +23,10 @@ struct Settings {
 
     std::array<int, Count> keys = defaults;
     float sensitivity = 1.0f;
+    Preferences preferences;
     int rebinding = -1;
     bool visible = false;
-    enum class Category { Display, Mouse, Bindings };
+    enum class Category { Display, Advanced, Hud, Crosshair, Mouse, Bindings };
     Category category = Category::Display;
 
     void load() {
@@ -58,13 +60,16 @@ struct Settings {
         }
         sensitivity = value;
         keys = saved;
+        std::string version;
+        if (file >> version && version=="preferences-v1") preferences.read(file);
     }
 
     void save() const {
         std::ofstream file("feel-lab-settings.txt");
         file << sensitivity;
         for (const auto key : keys) file << ' ' << key;
-        file << '\n';
+        file << '\n' << "preferences-v1 ";
+        preferences.write(file);
     }
 
     static bool is_mouse_button(int binding) {
@@ -154,41 +159,114 @@ struct Settings {
             rebinding=-1;
         }
 
+        if (ui::button(width-255,13,138,38,"Reset defaults") && interactive) {
+            keys=defaults;
+            sensitivity=1;
+            preferences=Preferences{};
+            preferences.apply_window();
+            rebinding=-1;
+            save();
+        }
+
         const int panel_width=std::min(width-36,930);
         const int left=(width-panel_width)/2;
-        const int tab_width=(panel_width-16)/3;
+        constexpr int tab_count=6;
+        const int tab_width=(panel_width-5*5)/tab_count;
         const auto tab = [&](int column, Category item, const char* label) {
-            if (ui::button(left+column*(tab_width+8),88,tab_width,40,label,category==item) && interactive) {
+            if (ui::button(left+column*(tab_width+5),88,tab_width,40,label,category==item) && interactive) {
                 category=item;
                 rebinding=-1;
             }
         };
-        tab(0,Category::Display,"Display");
-        tab(1,Category::Mouse,"Mouse");
-        tab(2,Category::Bindings,"Bindings");
+        tab(0,Category::Display,"Video");
+        tab(1,Category::Advanced,"Quality");
+        tab(2,Category::Hud,"HUD");
+        tab(3,Category::Crosshair,"Reticle");
+        tab(4,Category::Mouse,"Mouse");
+        tab(5,Category::Bindings,"Keys");
         DrawRectangle(left,146,panel_width,height-164,ui::panel);
 
-        if (category==Category::Display) {
-            ui::label("Screen mode",left+20,174,20);
-            if (ui::button(left+panel_width-176,161,156,39,
-                           IsWindowFullscreen()?"Fullscreen":"Windowed") && interactive) ToggleFullscreen();
-        } else if (category==Category::Mouse) {
-            ui::label("Mouse sensitivity",left+20,174,20);
-            const int slider_x=left+panel_width/2;
-            const int slider_width=panel_width/2-88;
-            const Rectangle slider{static_cast<float>(slider_x),165,static_cast<float>(slider_width),39};
-            if (interactive && ui::hovered(slider) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-                const float ratio=std::clamp((GetMousePosition().x-slider.x)/slider.width,0.0f,1.0f);
-                const float value=std::round((0.1f+4.9f*ratio)*10)/10;
-                if (value!=sensitivity) {
-                    sensitivity=value;
-                    save();
-                }
+        const int right=left+panel_width;
+        const auto button_row=[&](int y,const char* title,const char* value) {
+            ui::label(title,left+20,y+4,17);
+            DrawRectangle(left+20,y+29,panel_width-40,1,ui::line);
+            return ui::button(right-154,y-2,134,27,value) && interactive;
+        };
+        const auto toggle=[&](int y,const char* title,bool& value) {
+            if (!button_row(y,title,value?"On":"Off")) return false;
+            value=!value;
+            save();
+            return true;
+        };
+        const auto slider=[&](int y,const char* title,int value,int min,int max,const char* suffix) {
+            const int track_x=left+panel_width/2;
+            const int track_width=panel_width/2-85;
+            const Rectangle bounds{static_cast<float>(track_x),static_cast<float>(y),static_cast<float>(track_width),27};
+            ui::label(title,left+20,y+4,17);
+            if (interactive && ui::hovered(bounds) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                const float ratio=std::clamp((GetMousePosition().x-bounds.x)/bounds.width,0.0f,1.0f);
+                value=min+static_cast<int>(std::round(ratio*static_cast<float>(max-min)));
             }
-            DrawRectangle(slider_x,183,slider_width,4,ui::line);
-            const int knob=slider_x+static_cast<int>((sensitivity-0.1f)/4.9f*static_cast<float>(slider_width));
-            DrawCircle(knob,185,7,ui::accent);
-            ui::label(TextFormat("%.1fx",static_cast<double>(sensitivity)),left+panel_width-64,173,18);
+            DrawRectangle(track_x,y+12,track_width,4,ui::line);
+            DrawCircle(track_x+(value-min)*track_width/(max-min),y+14,6,ui::accent);
+            ui::label(TextFormat("%d%s",value,suffix),right-65,y+3,17);
+            DrawRectangle(left+20,y+29,panel_width-40,1,ui::line);
+            return value;
+        };
+        const auto adjust=[&](int y,const char* title,int& value,int min,int max,const char* suffix="") {
+            const int next=slider(y,title,value,min,max,suffix);
+            if (next!=value) {
+                value=next;
+                save();
+            }
+        };
+
+        if (category==Category::Display) {
+            if (button_row(160,"Display mode",preferences.fullscreen?"Fullscreen":"Windowed")) {
+                preferences.fullscreen=!preferences.fullscreen;
+                preferences.apply_window();
+                save();
+            }
+            const auto size=Preferences::sizes[static_cast<std::size_t>(preferences.window_size)];
+            if (button_row(199,"Window resolution",TextFormat("%d x %d",size[0],size[1]))) {
+                preferences.window_size=(preferences.window_size+1)%static_cast<int>(Preferences::sizes.size());
+                if (!preferences.fullscreen) preferences.apply_window();
+                save();
+            }
+            adjust(238,"Brightness",preferences.brightness,60,140,"%");
+            adjust(277,"Vertical field of view",preferences.fov,60,110);
+            ui::label(TextFormat("Monitor refresh rate: %d Hz",GetMonitorRefreshRate(GetCurrentMonitor())),
+                      left+20,320,17,ui::muted);
+        } else if (category==Category::Advanced) {
+            if (toggle(160,"Vertical sync",preferences.vsync)) preferences.apply_window();
+            toggle(199,"4x MSAA (next launch)",preferences.msaa);
+            adjust(238,"Maximum FPS in game",preferences.match_fps,30,500);
+            adjust(277,"Maximum FPS in menus",preferences.menu_fps,30,500);
+        } else if (category==Category::Hud) {
+            toggle(160,"Show FPS",preferences.show_fps);
+            toggle(199,"Show movement stats",preferences.movement_stats);
+            toggle(238,"Crosshair hit feedback",preferences.hit_feedback);
+            adjust(277,"HUD edge margin",preferences.hud_margin,0,40," px");
+        } else if (category==Category::Crosshair) {
+            DrawRectangle(left+20,156,panel_width-40,50,{50,62,68,255});
+            preferences.draw_crosshair(left+panel_width/2,181);
+            adjust(211,"Length",preferences.cross_length,1,20);
+            adjust(244,"Gap",preferences.cross_gap,0,16);
+            adjust(277,"Thickness",preferences.cross_thickness,1,6);
+            adjust(310,"Red",preferences.red,0,255);
+            adjust(343,"Green",preferences.green,0,255);
+            adjust(376,"Blue",preferences.blue,0,255);
+            adjust(409,"Opacity",preferences.cross_alpha,0,255);
+            toggle(442,"Center dot",preferences.cross_dot);
+            toggle(475,"Outline",preferences.cross_outline);
+        } else if (category==Category::Mouse) {
+            const float next=static_cast<float>(slider(160,"Sensitivity",static_cast<int>(std::round(sensitivity*10)),1,50,""))/10;
+            ui::label(TextFormat("Sensitivity multiplier: %.1fx",static_cast<double>(next)),left+20,245,17,ui::muted);
+            if (next!=sensitivity) {
+                sensitivity=next;
+                save();
+            }
+            toggle(199,"Invert vertical look",preferences.invert_mouse);
         } else {
             const bool two_columns=panel_width>=740;
             const int rows=two_columns?(Count+1)/2:Count;
