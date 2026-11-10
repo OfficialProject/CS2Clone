@@ -78,7 +78,7 @@ int main() {
                 input.jump_pressed = jump && !prev_jump;
                 input.crouch_held = crouch;
                 const MovementState old = state;
-                simulation.step(state, input);
+                (void)simulation.step(state, input);
                 const float height = static_cast<float>(state.vertical_position);
                 if (intersects(static_cast<float>(state.position.x), static_cast<float>(old.position.y), height)) {
                     state.position.x=old.position.x; state.velocity.x=0;
