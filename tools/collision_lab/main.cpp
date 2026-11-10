@@ -395,15 +395,21 @@ float measure_max_player_penetration(const std::vector<VirtualCharacter*>& playe
 int resolve_player_set_symmetrically(std::vector<VirtualCharacter*>& players,
                                      const bool project_world = false,
                                      const int max_iterations = 32,
-                                     const float penetration_tolerance = 0.0009f) {
-    std::sort(players.begin(), players.end(), [](const VirtualCharacter* a, const VirtualCharacter* b) {
-        return a->stable_id() < b->stable_id();
-    });
+                                     const float penetration_tolerance = 0.0009f,
+                                     const bool reverse_pair_order = false) {
     int iterations_used = 0;
     for (int iteration = 0; iteration < max_iterations; ++iteration) {
-        for (std::size_t first = 0; first < players.size(); ++first) {
-            for (std::size_t second = first + 1; second < players.size(); ++second) {
-                resolve_player_pair_symmetrically(*players[first], *players[second]);
+        if (reverse_pair_order) {
+            for (std::size_t first = players.size(); first-- > 0;) {
+                for (std::size_t second = first; second-- > 0;) {
+                    resolve_player_pair_symmetrically(*players[first], *players[second]);
+                }
+            }
+        } else {
+            for (std::size_t first = 0; first < players.size(); ++first) {
+                for (std::size_t second = first + 1; second < players.size(); ++second) {
+                    resolve_player_pair_symmetrically(*players[first], *players[second]);
+                }
             }
         }
         if (project_world) {
@@ -670,7 +676,7 @@ PlayerWallGroupResult run_ten_player_wall_group(const bool use_jolt_collision,
         }
         if (!use_jolt_collision) {
             max_solver_passes = std::max(
-                max_solver_passes, resolve_player_set_symmetrically(players, true, 64, 0.0009f));
+                max_solver_passes, resolve_player_set_symmetrically(players, true, 64, 0.0009f, true));
         }
     }
 
