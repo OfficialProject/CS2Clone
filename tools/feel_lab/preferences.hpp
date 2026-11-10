@@ -19,7 +19,7 @@ struct Preferences {
         {{{640,480},{800,600},{1024,768},{1280,960},{1440,1080},{1600,1200},{2048,1536},{2880,2160}}}
     }};
     int aspect=0, resolution=2;
-    static constexpr float vertical_fov=60.0f;
+    static constexpr int base_camera_fov=90;
 
     Resolution render_size() const {
         return render_modes[static_cast<std::size_t>(aspect)][static_cast<std::size_t>(resolution)];
@@ -57,7 +57,7 @@ struct Preferences {
 
     void write(std::ostream& file) const {
         file << window_size << ' ' << fullscreen << ' ' << vsync << ' ' << msaa << ' '
-             << brightness << ' ' << match_fps << ' ' << menu_fps << ' ' << vertical_fov << ' '
+             << brightness << ' ' << match_fps << ' ' << menu_fps << ' ' << base_camera_fov << ' '
              << show_fps << ' ' << movement_stats << ' ' << hit_feedback << ' ' << invert_mouse << ' '
              << hud_margin << ' ' << cross_length << ' ' << cross_gap << ' ' << cross_thickness << ' '
              << cross_alpha << ' ' << red << ' ' << green << ' ' << blue << ' '

@@ -188,6 +188,9 @@ int run_lab(int argc, char* argv[]) {
     float yaw = map.loaded() ? map.spawn_yaw : 0.0f, pitch = 0.0f;
     int capture_frames = 0;
     RenderTexture2D render_target{};
+    // Source uses a horizontal FOV at 4:3. Raylib takes a vertical FOV.
+    const float camera_fov = 2.0f*std::atan(0.75f*std::tan(
+        static_cast<float>(feel_lab::Preferences::base_camera_fov)*DEG2RAD*0.5f))*RAD2DEG;
     const auto target_positions = map.loaded() ? mirage_targets(map) : range_targets;
     std::array<bool,5> targets{};
     int ammunition = magazine_size;
@@ -378,8 +381,8 @@ int run_lab(int argc, char* argv[]) {
         const float eye = map.loaded() ? (64.0f-18.0f*static_cast<float>(state.crouch_fraction))*static_cast<float>(MovementConfig::source_unit) : standing_eye+(crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
         const Vector3 pos = {static_cast<float>(state.position.x),eye+static_cast<float>(state.vertical_position),static_cast<float>(state.position.y)};
         const Vector3 dir = {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)};
-        Camera3D camera={pos,Vector3Add(pos,dir),{0,1,0},feel_lab::Preferences::vertical_fov,CAMERA_PERSPECTIVE};
-        if (overview && map.loaded()) camera={{0,105,0},{0,0,0},{0,0,-1},feel_lab::Preferences::vertical_fov,CAMERA_PERSPECTIVE};
+        Camera3D camera={pos,Vector3Add(pos,dir),{0,1,0},camera_fov,CAMERA_PERSPECTIVE};
+        if (overview && map.loaded()) camera={{0,105,0},{0,0,0},{0,0,-1},60,CAMERA_PERSPECTIVE};
         const auto resolution=options.render_size();
         const int screen_width=GetScreenWidth();
         const int screen_height=GetScreenHeight();
