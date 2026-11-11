@@ -221,6 +221,7 @@ int run_lab(int argc, char* argv[]) {
     std::array<bool,5> targets{};
     int ammunition = magazine_size;
     double next_shot = 0, reload_finish = 0;
+    feel_lab::Gunplay practice_gunplay;
     int hits = 0, shots = 0;
     double total_time = 0.0, accumulator = 0.0;
     using feel_lab::Frontend;
@@ -260,6 +261,7 @@ int run_lab(int argc, char* argv[]) {
         targets.fill(false);
         ammunition=magazine_size;
         next_shot=reload_finish=0;
+        practice_gunplay={};
         last_hit_flash=0;
         if (offline) EnableCursor();
         else DisableCursor();
@@ -350,7 +352,7 @@ int run_lab(int argc, char* argv[]) {
                 const auto previous_phase = round.phase;
                 if (offline) {
                     const auto previous=match.phase;
-                    match.step(cfg.fixed_dt,map,feet,Vector3Add(feet,{0,1.48f,0}),
+                    match.step(cfg.fixed_dt,map,feet,Vector3Add(feet,{0,feel_lab::ImportedMap::eye_height(state.crouch_fraction),0}),
                                site_a.contains(feet)||site_b.contains(feet),grounded,settings.down(Controls::Use));
                     if (previous==feel_lab::OfflineMatch::Phase::Buy) {
                         input={};
@@ -378,6 +380,9 @@ int run_lab(int argc, char* argv[]) {
                     }
                 }
                 if (map.loaded() && state.vertical_position < map.lowest-10) reset_position(state);
+                const bool landed = !grounded && !old.on_ladder && state.mode==MovementMode::Grounded;
+                if (offline) match.advance_gunplay(cfg.fixed_dt,landed);
+                else practice_gunplay.advance(feel_lab::rifle_accuracy,shot_interval,cfg.fixed_dt,landed);
                 accumulator -= cfg.fixed_dt;
                 if (hits < static_cast<int>(targets.size())) total_time += cfg.fixed_dt;
                 pending_jump = false;
@@ -403,7 +408,8 @@ int run_lab(int argc, char* argv[]) {
                     break;
                 }
             }
-            const float eye = map.loaded() ? (64.0f-18.0f*static_cast<float>(state.crouch_fraction))*static_cast<float>(MovementConfig::source_unit) : standing_eye + (crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
+            const float eye = map.loaded() ? feel_lab::ImportedMap::eye_height(state.crouch_fraction) :
+                standing_eye + (crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
             const Vector3 pos = {static_cast<float>(state.position.x), eye+static_cast<float>(state.vertical_position), static_cast<float>(state.position.y)};
             const Vector3 dir = {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)};
             if (offline) {
@@ -411,8 +417,7 @@ int run_lab(int argc, char* argv[]) {
                     if (settings.pressed(Controls::Reload) && match.reload==0 &&
                         match.magazine()<match.weapon().magazine) match.reload=match.weapon().reload;
                     if ((settings.pressed(Controls::Fire) || settings.down(Controls::Fire)) &&
-                        !(settings.down(Controls::Use) && match.interaction>0) && match.fire(map,{pos,dir},std::hypot(state.velocity.x,state.velocity.y),
-                            state.mode==MovementMode::Grounded))
+                        !(settings.down(Controls::Use) && match.interaction>0) && match.fire(map,{pos,dir},state))
                         last_hit_flash=0.18f;
                 }
             } else if (reload_finish > 0 && total_time >= reload_finish) {
@@ -428,7 +433,7 @@ int run_lab(int argc, char* argv[]) {
                 next_shot = total_time + shot_interval;
                 --ammunition;
                 ++shots;
-                const Ray ray={pos,dir};
+                const Ray ray=practice_gunplay.shoot({pos,dir},feel_lab::rifle_accuracy,state);
                 float nearest=1000;
                 if (map.loaded()) nearest = map.collision.shot_distance(ray,nearest);
                 else ray_hits_wall(ray,nearest);
@@ -452,7 +457,8 @@ int run_lab(int argc, char* argv[]) {
             }
         }
         last_hit_flash=std::max(0.0f,last_hit_flash-frame_dt);
-        const float eye = map.loaded() ? (64.0f-18.0f*static_cast<float>(state.crouch_fraction))*static_cast<float>(MovementConfig::source_unit) : standing_eye+(crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
+        const float eye = map.loaded() ? feel_lab::ImportedMap::eye_height(state.crouch_fraction) :
+            standing_eye + (crouched_eye-standing_eye)*static_cast<float>(state.crouch_fraction);
         const Vector3 pos = {static_cast<float>(state.position.x),eye+static_cast<float>(state.vertical_position),static_cast<float>(state.position.y)};
         const Vector3 dir = {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)};
         Camera3D camera={pos,Vector3Add(pos,dir),{0,1,0},camera_fov,CAMERA_PERSPECTIVE};
@@ -527,12 +533,20 @@ int run_lab(int argc, char* argv[]) {
             DrawRectangle(margin,margin,480,169,{12,18,26,190});
             DrawText(map.loaded()?"MIRAGE  |  128 Hz movement lab":"MOVEMENT FEEL LAB  |  128 Hz simulation",
                      24+offset,20+offset,19,RAYWHITE);
-            if (options.movement_stats) DrawText(TextFormat("Speed: %.2f  |  Crouch: %.0f%%  |  %s",
-                std::hypot(state.velocity.x,state.velocity.y),state.crouch_fraction*100,
-                state.on_ladder?"LADDER":state.mode==MovementMode::Grounded?"GROUND":"AIR"),24+offset,51+offset,18,RAYWHITE);
+            if (options.movement_stats) {
+                const float spread=offline ? match.spread(state) : practice_gunplay.spread(feel_lab::rifle_accuracy,state);
+                DrawText(TextFormat("%.0f u/s  |  %.1f mrad  |  Crouch %.0f%%  |  %s",
+                    std::hypot(state.velocity.x,state.velocity.y)/MovementConfig::source_unit,
+                    spread*1000.0f,state.crouch_fraction*100,
+                    state.on_ladder?"LADDER":state.mode==MovementMode::Grounded?"GROUND":"AIR"),
+                    24+offset,51+offset,18,RAYWHITE);
+            }
             if (offline) {
-                DrawText(TextFormat("%s | YOU %d - %d BOTS | %.1f s",match.attacking()?"T":"CT",
-                                    match.won_rounds,match.lost_rounds,std::max(0.0,match.time)),
+                using Phase = feel_lab::OfflineMatch::Phase;
+                const char* clock=match.phase==Phase::Buy?"BUY":match.phase==Phase::Planted?"BOMB":"ROUND";
+                const int seconds=static_cast<int>(std::ceil(std::max(0.0,match.time)));
+                DrawText(TextFormat("%s %d:%02d  |  %s  |  YOU %d - %d BOTS",clock,seconds/60,seconds%60,
+                                    match.attacking()?"T":"CT",match.won_rounds,match.lost_rounds),
                          24+offset,78+offset,18,RAYWHITE);
                 DrawText(TextFormat("HP %d   Armor %d   $%d",match.health,match.armor,match.cash),
                          24+offset,104+offset,18,RAYWHITE);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "imported_map.hpp"
+#include "gunplay.hpp"
 #include <array>
 
 namespace feel_lab {
@@ -42,6 +43,7 @@ struct OfflineMatch {
     Vector3 bomb{};
     std::array<Opponent,2> bots{};
     std::array<int,3> ammo{};
+    std::array<Gunplay,3> gunplay{};
     Weapon equipped=Weapon::Pistol;
     double cooldown=0, reload=0;
     int won_rounds=0, lost_rounds=0, completed=0;
@@ -58,6 +60,17 @@ struct OfflineMatch {
     int& magazine() { return ammo[static_cast<std::size_t>(equipped)]; }
     bool bots_alive() const { return bots[0].alive() || bots[1].alive(); }
 
+    void advance_gunplay(double dt, bool landed) {
+        gunplay[1].advance(pistol_accuracy,weapons[1].interval,dt,landed);
+        gunplay[2].advance(rifle_accuracy,weapons[2].interval,dt,landed);
+    }
+
+    float spread(const game::simulation::MovementState& state) const {
+        if (equipped==Weapon::Knife) return 0;
+        return gunplay[static_cast<std::size_t>(equipped)].spread(
+            equipped==Weapon::Pistol?pistol_accuracy:rifle_accuracy,state);
+    }
+
     void start(const ImportedMap& map, bool new_match) {
         if (new_match) *this=OfflineMatch{};
         if (completed==3) cash=800;
@@ -65,6 +78,7 @@ struct OfflineMatch {
         time=8;
         interaction=elapsed=cooldown=reload=0;
         shot_kick=0;
+        gunplay={};
         health=100;
         armor=0;
         rifle=kit=false;
@@ -192,7 +206,7 @@ struct OfflineMatch {
             for (const auto& bot : bots)
                 bot_on_site=bot_on_site || (bot.alive() && Vector3Distance(bot.feet,bomb)<1.65f);
             if (!attacking()) interaction=elapsed>=21 && bot_on_site?interaction+dt:0;
-            if (interaction>=3) {
+            if (interaction>=3 && time>=0) {
                 if (attacking()) bomb=feet;
                 phase=Phase::Planted;
                 time=40;
@@ -221,21 +235,16 @@ struct OfflineMatch {
         if (time<=0) finish(attacking(),"Bomb detonated");
     }
 
-    bool fire(const ImportedMap& map, Ray aim, double speed, bool grounded) {
+    bool fire(const ImportedMap& map, Ray aim, const game::simulation::MovementState& state) {
         if (phase==Phase::Buy || phase==Phase::Result || cooldown>0 || reload>0 ||
             (equipped!=Weapon::Knife && magazine()==0)) return false;
         cooldown=weapon().interval;
         if (equipped!=Weapon::Knife) {
-            const float base=equipped==Weapon::Pistol?0.009f:0.006f;
-            const float spread=base+0.003f*static_cast<float>(std::min(speed,8.0))+(grounded?0.0f:0.035f);
-            const auto right=Vector3Normalize(Vector3CrossProduct(aim.direction,{0,1,0}));
-            const auto up=Vector3Normalize(Vector3CrossProduct(right,aim.direction));
-            const auto noise=[] { return static_cast<float>(GetRandomValue(-1000,1000))/1000; };
-            aim.direction=Vector3Normalize(Vector3Add(aim.direction,
-                Vector3Add(Vector3Scale(right,noise()*spread),Vector3Scale(up,noise()*spread+shot_kick*0.009f))));
+            aim=gunplay[static_cast<std::size_t>(equipped)].shoot(
+                aim,equipped==Weapon::Pistol?pistol_accuracy:rifle_accuracy,state);
             shot_kick=std::min(1.0f,shot_kick+(equipped==Weapon::Pistol?0.22f:0.32f));
+            --magazine();
         }
-        if (equipped!=Weapon::Knife) --magazine();
         float nearest=map.collision.shot_distance(aim,weapon().reach);
         Opponent* target=nullptr;
         for (auto& bot : bots) {

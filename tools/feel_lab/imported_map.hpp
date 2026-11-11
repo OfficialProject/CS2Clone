@@ -183,8 +183,11 @@ public:
                 state.vertical_velocity = 2.0;
                 input.jump_pressed = false;
             } else {
-                constexpr float climb_speed = 200.0f * static_cast<float>(MovementConfig::source_unit);
-                const auto across = Vector3Add(wish,Vector3Scale(ladder.normal,into));
+                constexpr float full_climb_speed = 200.0f * static_cast<float>(MovementConfig::source_unit);
+                const float climb_speed = (input.crouch_held || input.walk_held) ?
+                    full_climb_speed * 0.34f : full_climb_speed;
+                const auto across = Vector3Scale(Vector3Add(wish,Vector3Scale(ladder.normal,into)),
+                                                 input.crouch_held ? 1.0f : 0.5f);
                 Vector3 direction{across.x,into,across.z};
                 const bool dismounting = into > 0 && feet.y >= ladder.top+0.015f;
                 if (dismounting) {
@@ -201,11 +204,15 @@ public:
                 return;
             }
         }
+        const bool center_stance = old.mode==MovementMode::Airborne && !old.on_ladder;
         if (!input.crouch_held && old.crouch_fraction>0) {
             const auto& cfg=simulation.config();
             const double next=std::max(0.0,old.crouch_fraction-cfg.fixed_dt/cfg.crouch_transition_seconds);
             const float growth=hull_height(next)-hull_height(old.crouch_fraction);
-            if (collision.sweep(feet,{0,growth+0.002f,0},hull_height(old.crouch_fraction)).fraction<1)
+            const float upward_growth=center_stance ? growth*0.5f : growth;
+            const bool head_blocked=collision.sweep(feet,{0,upward_growth+0.002f,0},height).fraction<1;
+            const bool feet_blocked=center_stance && collision.sweep(feet,{0,-growth*0.5f,0},height).fraction<1;
+            if (head_blocked || feet_blocked)
                 input.crouch_held=true;
         }
         (void)simulation.step(state,input);
@@ -215,13 +222,25 @@ public:
         const Vector3 delta{static_cast<float>(state.position.x-old.position.x),
                             static_cast<float>(state.vertical_position-old.vertical_position),
                             static_cast<float>(state.position.y-old.position.y)};
-        const auto motion=collision.move(feet,velocity,delta,hull_height(state.crouch_fraction),
+        const float next_height=hull_height(state.crouch_fraction);
+        auto stance_origin=feet;
+        if (center_stance) {
+            const float offset=(height-next_height)*0.5f;
+            const float clearance=offset>0 ? collision.sweep(feet,{0,offset,0},next_height).fraction : 1.0f;
+            stance_origin.y+=offset*clearance;
+        }
+        const auto motion=collision.move(stance_origin,velocity,delta,next_height,
                                          old.mode==MovementMode::Grounded && !input.jump_pressed);
         apply_motion(state,motion);
     }
 
     static float hull_height(double crouch_fraction) {
         return (72.0f-18.0f*static_cast<float>(crouch_fraction)) *
+               static_cast<float>(game::simulation::MovementConfig::source_unit);
+    }
+
+    static float eye_height(double crouch_fraction) {
+        return (64.0f-18.0f*static_cast<float>(crouch_fraction)) *
                static_cast<float>(game::simulation::MovementConfig::source_unit);
     }
 
