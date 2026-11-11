@@ -8,6 +8,7 @@ namespace feel_lab {
 
 struct Frontend {
     enum class Screen { Home, Lobby, Match, Pause, Result };
+    enum class RoundCommand { Continue, Restart, Settings, Lobby };
     Screen screen = Screen::Home;
     GameMode selected = GameMode::Practice;
 
@@ -72,14 +73,15 @@ struct Frontend {
             DrawRectangle(0,card_top+card_height,width,height-card_top-card_height,backdrop);
             ui::label("LOCAL LOBBY",margin,82,29);
             const int tab_width=(content-24)/4;
-            if (ui::button(margin,132,tab_width,40,"Targets",selected==GameMode::Practice))
-                selected=GameMode::Practice;
-            if (mirage && ui::button(margin+tab_width+8,132,tab_width,40,"Plant",selected==GameMode::Plant))
-                selected=GameMode::Plant;
-            if (mirage && ui::button(margin+2*(tab_width+8),132,tab_width,40,"Defuse",selected==GameMode::Defuse))
-                selected=GameMode::Defuse;
-            if (mirage && ui::button(margin+3*(tab_width+8),132,tab_width,40,"Offline Match",selected==GameMode::OfflineMatch))
-                selected=GameMode::OfflineMatch;
+            using ModeButton = ui::MenuButton<GameMode>;
+            const std::array mode_buttons{
+                ModeButton{"Targets", GameMode::Practice, selected==GameMode::Practice},
+                ModeButton{"Plant", GameMode::Plant, selected==GameMode::Plant, false, mirage},
+                ModeButton{"Defuse", GameMode::Defuse, selected==GameMode::Defuse, false, mirage},
+                ModeButton{"Offline Match", GameMode::OfflineMatch, selected==GameMode::OfflineMatch, false, mirage}
+            };
+            if (const auto mode = ui::menu_buttons({margin,132,tab_width,40,tab_width+8,0}, mode_buttons))
+                selected = *mode;
 
             DrawRectangle(margin,card_top,map_width,card_height,{15,25,33,70});
             DrawRectangleGradientV(margin,card_top+card_height-102,map_width,102,{10,17,24,25},{10,17,24,245});
@@ -106,11 +108,21 @@ struct Frontend {
                       paused?ui::text:won?ui::accent:ORANGE);
             ui::label(paused?mode_name():result,left+24,top+77,18,ui::muted);
             if (!paused) ui::label(score,left+24,top+105,17,ui::accent);
-            if (ui::button(left+24,top+137,380,41,paused?"Resume":next_label,false,true))
-                return paused?Action::Resume:Action::Start;
-            if (paused && ui::button(left+24,top+181,380,41,"Restart round")) return Action::Start;
-            if (ui::button(left+24,top+223,380,41,"Settings")) settings.visible=true;
-            if (ui::button(left+24,top+272,380,41,"Return to lobby")) screen=Screen::Lobby;
+            using RoundButton = ui::MenuButton<RoundCommand>;
+            const std::array round_buttons{
+                RoundButton{paused?"Resume":next_label, RoundCommand::Continue, false, true},
+                RoundButton{"Restart round", RoundCommand::Restart, false, false, paused},
+                RoundButton{"Settings", RoundCommand::Settings},
+                RoundButton{"Return to lobby", RoundCommand::Lobby}
+            };
+            if (const auto command = ui::menu_buttons({left+24,top+137,380,41,0,45}, round_buttons)) {
+                switch (*command) {
+                case RoundCommand::Continue: return paused?Action::Resume:Action::Start;
+                case RoundCommand::Restart: return Action::Start;
+                case RoundCommand::Settings: settings.visible=true; break;
+                case RoundCommand::Lobby: screen=Screen::Lobby; break;
+                }
+            }
         }
         return Action::None;
     }

@@ -2,6 +2,9 @@
 
 #include "raylib.h"
 
+#include <array>
+#include <optional>
+
 namespace feel_lab::ui {
 
 inline constexpr Color panel{19,25,32,246};
@@ -47,6 +50,34 @@ inline bool button(int x, int y, int width, int height, const char* value, bool 
     DrawRectangleLinesEx(bounds,1,selected?accent:line);
     label(value,x+13,y+(height-18)/2-1,18);
     return hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+}
+
+template<class Command>
+struct MenuButton {
+    const char* label;
+    Command command;
+    bool selected = false;
+    bool primary = false;
+    bool visible = true;
+};
+
+struct ButtonLayout {
+    int x, y, width, height;
+    int step_x, step_y;
+};
+
+template<class Command, std::size_t Count>
+std::optional<Command> menu_buttons(ButtonLayout layout, const std::array<MenuButton<Command>, Count>& items) {
+    std::optional<Command> activated;
+    for (const auto& item : items) {
+        if (item.visible && button(layout.x, layout.y, layout.width, layout.height,
+                                   item.label, item.selected, item.primary)) {
+            activated = item.command;
+        }
+        layout.x += layout.step_x;
+        layout.y += layout.step_y;
+    }
+    return activated;
 }
 
 inline void bar() {
