@@ -26,3 +26,7 @@ In Plant mode, hold Use / C4 (F by default) on the ground at A or B for three se
 Choose **Offline Match** in the Mirage lobby for a short local match against two bots. You start as T, switch to CT after three rounds, and play until either side wins four rounds or the score is tied after six. The buy menu opens before each round. Use **B** to reopen it during the buy phase and **1 / 2 / 3** to equip rifle, pistol, or knife. Reload, fire, and Use follow your settings. The scoreboard appears after each round and again at match end.
 
 The bots guard A, shoot when they have a clear line of sight, and move locally to plant or defuse. They use collision but do not navigate the full map. Weapon models are geometric placeholders with a separate 60-degree viewmodel projection. Weapon and economy values are local match tuning.
+
+Survive a round to keep your rifle, armor, and defuse kit. Ammo is replenished between rounds. During play, reloads draw from the reserve shown next to the magazine count. Death clears your gear for the next round, and halftime resets both gear and cash. The losing-round payout increases on consecutive losses, and bomb objectives can award extra cash. Restarting a round restores its starting cash, gear, and score statistics.
+
+Shots can hit a bot's body or head. Headshots with firearms deal extra damage, and firearm damage falls off with distance. If you die after planting, the round continues until the bots defuse or the bomb detonates.

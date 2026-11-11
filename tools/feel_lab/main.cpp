@@ -368,7 +368,7 @@ int run_lab(int argc, char* argv[]) {
                 }
                 const MovementState old = state;
                 if (map.loaded()) {
-                    map.advance(simulation,state,input);
+                    if (!offline || match.alive()) map.advance(simulation,state,input);
                 } else {
                     (void)simulation.step(state,input);
                     const float height=static_cast<float>(state.vertical_position);
@@ -414,8 +414,7 @@ int run_lab(int argc, char* argv[]) {
             const Vector3 dir = {std::sin(yaw)*std::cos(pitch),std::sin(pitch),-std::cos(yaw)*std::cos(pitch)};
             if (offline) {
                 if (!frontend.menu() && match.phase!=feel_lab::OfflineMatch::Phase::Buy) {
-                    if (settings.pressed(Controls::Reload) && match.reload==0 &&
-                        match.magazine()<match.weapon().magazine) match.reload=match.weapon().reload;
+                    if (settings.pressed(Controls::Reload)) match.start_reload();
                     if ((settings.pressed(Controls::Fire) || settings.down(Controls::Fire)) &&
                         !(settings.down(Controls::Use) && match.interaction>0) && match.fire(map,{pos,dir},state))
                         last_hit_flash=0.18f;
@@ -506,7 +505,7 @@ int run_lab(int argc, char* argv[]) {
             }
         }
         EndMode3D();
-        if (offline && accepting_input && !match.buying) draw_weapon(match.equipped,match.shot_kick);
+        if (offline && accepting_input && match.alive() && !match.buying) draw_weapon(match.equipped,match.shot_kick);
         if (scale_scene) {
             EndTextureMode();
             BeginDrawing();
@@ -527,7 +526,7 @@ int run_lab(int argc, char* argv[]) {
         }
         const int cx=GetScreenWidth()/2,cy=GetScreenHeight()/2;
         if (!frontend.menu() && !settings.visible) {
-            options.draw_crosshair(cx,cy,last_hit_flash>0);
+            if (!offline || match.alive()) options.draw_crosshair(cx,cy,last_hit_flash>0);
             const int margin=options.hud_margin;
             const int offset=margin-12;
             DrawRectangle(margin,margin,480,169,{12,18,26,190});
@@ -550,8 +549,12 @@ int run_lab(int argc, char* argv[]) {
                          24+offset,78+offset,18,RAYWHITE);
                 DrawText(TextFormat("HP %d   Armor %d   $%d",match.health,match.armor,match.cash),
                          24+offset,104+offset,18,RAYWHITE);
-                DrawText(match.reload>0?"Reloading...":TextFormat("%s   %d   |   1 / 2 / 3 equip",
-                         match.weapon().name,match.magazine()),24+offset,128+offset,17,RAYWHITE);
+                const char* loadout=TextFormat("%s   %d / %d   |   1 / 2 / 3 equip",
+                                              match.weapon().name,match.magazine(),match.spare_ammo());
+                if (match.equipped==feel_lab::Weapon::Knife) loadout="Knife   |   1 / 2 / 3 equip";
+                if (match.reload>0) loadout="Reloading...";
+                if (!match.alive()) loadout="Eliminated. Waiting for the bomb outcome.";
+                DrawText(loadout,24+offset,128+offset,17,RAYWHITE);
             } else if (round.mode == GameMode::Practice) {
                 DrawText(TextFormat("Targets: %d/5  |  Shots: %d  |  Time: %.1fs",hits,shots,total_time),24+offset,78+offset,18,RAYWHITE);
             } else {
@@ -591,7 +594,7 @@ int run_lab(int argc, char* argv[]) {
             feel_lab::ui::label(TextFormat("BUY   $%d   |   %.1f s",match.cash,match.time),cx-198,cy-128,24);
             if (feel_lab::ui::button(cx-198,cy-81,396,36,match.rifle?"Rifle  /  Owned":"Rifle  /  $2700"))
                 match.purchase(0);
-            if (feel_lab::ui::button(cx-198,cy-37,396,36,match.armor>0?"Armor  /  Owned":"Armor  /  $650"))
+            if (feel_lab::ui::button(cx-198,cy-37,396,36,match.armor==100?"Armor  /  Full":"Armor  /  $650"))
                 match.purchase(1);
             if (!match.attacking() && feel_lab::ui::button(cx-198,cy+7,396,36,match.kit?"Kit  /  Owned":"Defuse kit  /  $400"))
                 match.purchase(2);

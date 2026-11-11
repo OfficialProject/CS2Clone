@@ -11,26 +11,33 @@ enum class Weapon { Knife, Pistol, Rifle };
 struct WeaponInfo {
     const char* name;
     int magazine;
+    int reserve;
     int damage;
     double interval;
     double reload;
     float reach;
+    float range_modifier;
 };
 
 inline constexpr std::array<WeaponInfo,3> weapons{{
-    {"Knife",0,50,0.55,0,1.65f},
-    {"Pistol",20,30,0.15,2.2,100},
-    {"Rifle",30,36,0.10,2.5,100}
+    {"Knife",0,0,50,0.55,0,1.65f,1.0f},
+    {"Pistol",20,120,30,0.15,2.2,100,0.91f},
+    {"Rifle",30,90,36,0.10,2.5,100,0.98f}
 }};
 
 struct Opponent {
+    static constexpr float half_width=0.28f;
+    static constexpr float body_height=1.32f;
+    static constexpr float head_radius=0.17f;
     Vector3 feet{};
     int health=100;
     double shot_timer=0;
     Vector3 guard{};
     bool alive() const { return health>0; }
-    BoundingBox hitbox() const {
-        return {{feet.x-0.28f,feet.y,feet.z-0.28f},{feet.x+0.28f,feet.y+1.65f,feet.z+0.28f}};
+    Vector3 head() const { return Vector3Add(feet,{0,1.48f,0}); }
+    BoundingBox body_hitbox() const {
+        return {{feet.x-half_width,feet.y,feet.z-half_width},
+                {feet.x+half_width,feet.y+body_height,feet.z+half_width}};
     }
 };
 
@@ -43,21 +50,29 @@ struct OfflineMatch {
     Vector3 bomb{};
     std::array<Opponent,2> bots{};
     std::array<int,3> ammo{};
+    std::array<int,3> reserve{};
     std::array<Gunplay,3> gunplay{};
     Weapon equipped=Weapon::Pistol;
     double cooldown=0, reload=0;
     int won_rounds=0, lost_rounds=0, completed=0;
     int kills=0, health=100, armor=0, cash=800;
     int deaths=0;
+    int consecutive_losses=0;
     float shot_kick=0;
     bool rifle=false, kit=false, buying=false, won_round=false;
     const char* result="";
     const char* purchase_message="";
+    struct RoundLoadout {
+        int cash=800, armor=0, kills=0, deaths=0;
+        bool rifle=false, kit=false;
+    } round_start;
 
     bool attacking() const { return completed<3; }
     bool finished() const { return won_rounds>=4 || lost_rounds>=4 || completed>=6; }
     const WeaponInfo& weapon() const { return weapons[static_cast<std::size_t>(equipped)]; }
     int& magazine() { return ammo[static_cast<std::size_t>(equipped)]; }
+    int& spare_ammo() { return reserve[static_cast<std::size_t>(equipped)]; }
+    bool alive() const { return health>0; }
     bool bots_alive() const { return bots[0].alive() || bots[1].alive(); }
 
     void advance_gunplay(double dt, bool landed) {
@@ -72,20 +87,37 @@ struct OfflineMatch {
     }
 
     void start(const ImportedMap& map, bool new_match) {
-        if (new_match) *this=OfflineMatch{};
-        if (completed==3) cash=800;
+        if (new_match) {
+            *this=OfflineMatch{};
+        } else if (phase!=Phase::Result) {
+            cash=round_start.cash;
+            armor=round_start.armor;
+            kills=round_start.kills;
+            deaths=round_start.deaths;
+            rifle=round_start.rifle;
+            kit=round_start.kit;
+        } else {
+            if (!alive() || completed==3) {
+                armor=0;
+                rifle=kit=false;
+            }
+            if (completed==3) {
+                cash=800;
+                consecutive_losses=0;
+            }
+        }
+        round_start={cash,armor,kills,deaths,rifle,kit};
         phase=Phase::Buy;
         time=8;
         interaction=elapsed=cooldown=reload=0;
         shot_kick=0;
         gunplay={};
         health=100;
-        armor=0;
-        rifle=kit=false;
         buying=true;
         purchase_message="";
-        equipped=Weapon::Pistol;
+        equipped=rifle?Weapon::Rifle:Weapon::Pistol;
         ammo={0,weapons[1].magazine,weapons[2].magazine};
+        reserve={0,weapons[1].reserve,weapons[2].reserve};
         const auto site=map.spawn_player({-49.88f,-3.24f,-10.2f});
         bomb={-49.88f,static_cast<float>(site.vertical_position),-10.2f};
         const std::array<Vector3,2> positions=attacking()
@@ -100,7 +132,7 @@ struct OfflineMatch {
 
     void purchase(int item) {
         const int price=item==0?2700:item==1?650:400;
-        const bool owned=item==0?rifle:item==1?armor>0:kit;
+        const bool owned=item==0?rifle:item==1?armor==100:kit;
         if (phase!=Phase::Buy || owned || (item==2 && attacking())) return;
         if (cash<price) {
             purchase_message="Insufficient funds";
@@ -124,7 +156,7 @@ struct OfflineMatch {
         }
     }
 
-    void finish(bool win,const char* reason) {
+    void finish(bool win,const char* reason,int objective_award=0) {
         if (phase==Phase::Result) return;
         phase=Phase::Result;
         buying=false;
@@ -133,7 +165,14 @@ struct OfflineMatch {
         ++completed;
         if (win) ++won_rounds;
         else ++lost_rounds;
-        cash=std::min(16000,cash+(win?3250:1900));
+        consecutive_losses=win?0:std::min(consecutive_losses+1,5);
+        const int award=win?3250:1400+500*(consecutive_losses-1);
+        cash=std::min(16000,cash+award+objective_award);
+    }
+
+    void start_reload() {
+        if (alive() && reload==0 && magazine()<weapon().magazine && spare_ammo()>0)
+            reload=weapon().reload;
     }
 
     void step(double dt, const ImportedMap& map, Vector3 feet, Vector3 eye,
@@ -154,9 +193,14 @@ struct OfflineMatch {
         shot_kick=std::max(0.0f,shot_kick-static_cast<float>(dt)*4);
         if (reload>0) {
             reload=std::max(0.0,reload-dt);
-            if (reload==0) magazine()=weapon().magazine;
+            if (reload==0) {
+                const int rounds=std::min(spare_ammo(),weapon().magazine-magazine());
+                magazine()+=rounds;
+                spare_ammo()-=rounds;
+            }
         }
 
+        const bool was_alive=alive();
         for (auto& bot : bots) {
             if (!bot.alive()) continue;
             auto destination=bot.guard;
@@ -177,7 +221,7 @@ struct OfflineMatch {
                 if (movement.grounded) bot.feet=movement.position;
             }
             bot.shot_timer-=dt;
-            if (bot.shot_timer>0) continue;
+            if (bot.shot_timer>0 || !alive()) continue;
             const auto origin=Vector3Add(bot.feet,{0,1.46f,0});
             const auto delta=Vector3Subtract(eye,origin);
             const float distance=Vector3Length(delta);
@@ -189,8 +233,8 @@ struct OfflineMatch {
                 bot.shot_timer=0.65;
             } else bot.shot_timer=0.2;
         }
-        if (health==0) {
-            ++deaths;
+        if (was_alive && !alive()) ++deaths;
+        if (!alive() && !(attacking() && phase==Phase::Planted)) {
             finish(false,"Eliminated");
             return;
         }
@@ -207,7 +251,10 @@ struct OfflineMatch {
                 bot_on_site=bot_on_site || (bot.alive() && Vector3Distance(bot.feet,bomb)<1.65f);
             if (!attacking()) interaction=elapsed>=21 && bot_on_site?interaction+dt:0;
             if (interaction>=3 && time>=0) {
-                if (attacking()) bomb=feet;
+                if (attacking()) {
+                    bomb=feet;
+                    cash=std::min(16000,cash+300);
+                }
                 phase=Phase::Planted;
                 time=40;
                 interaction=0;
@@ -219,7 +266,7 @@ struct OfflineMatch {
             const bool defusing=grounded && use && Vector3Distance(feet,bomb)<1.65f;
             interaction=defusing?interaction+dt:0;
             if (interaction>=(kit?5:10) && time>=0) {
-                finish(true,"Bomb defused");
+                finish(true,"Bomb defused",300);
                 return;
             }
         } else {
@@ -228,15 +275,15 @@ struct OfflineMatch {
                 defender_near=defender_near || (bot.alive() && Vector3Distance(bot.feet,bomb)<2.0f);
             interaction=defender_near?interaction+dt:0;
             if (interaction>=10 && time>=0) {
-                finish(false,"Defender defused the bomb");
+                finish(false,"Defender defused the bomb",800);
                 return;
             }
         }
-        if (time<=0) finish(attacking(),"Bomb detonated");
+        if (time<=0) finish(attacking(),"Bomb detonated",attacking()?250:0);
     }
 
     bool fire(const ImportedMap& map, Ray aim, const game::simulation::MovementState& state) {
-        if (phase==Phase::Buy || phase==Phase::Result || cooldown>0 || reload>0 ||
+        if (!alive() || phase==Phase::Buy || phase==Phase::Result || cooldown>0 || reload>0 ||
             (equipped!=Weapon::Knife && magazine()==0)) return false;
         cooldown=weapon().interval;
         if (equipped!=Weapon::Knife) {
@@ -247,16 +294,27 @@ struct OfflineMatch {
         }
         float nearest=map.collision.shot_distance(aim,weapon().reach);
         Opponent* target=nullptr;
+        bool headshot=false;
         for (auto& bot : bots) {
             if (!bot.alive()) continue;
-            const auto hit=GetRayCollisionBox(aim,bot.hitbox());
-            if (hit.hit && hit.distance<nearest) {
+            const auto body=GetRayCollisionBox(aim,bot.body_hitbox());
+            if (body.hit && body.distance<nearest) {
                 target=&bot;
-                nearest=hit.distance;
+                nearest=body.distance;
+                headshot=false;
+            }
+            const auto head=GetRayCollisionSphere(aim,bot.head(),Opponent::head_radius);
+            if (head.hit && head.distance<nearest) {
+                target=&bot;
+                nearest=head.distance;
+                headshot=equipped!=Weapon::Knife;
             }
         }
         if (!target) return false;
-        target->health=std::max(0,target->health-weapon().damage);
+        constexpr float falloff_distance=500*static_cast<float>(game::simulation::MovementConfig::source_unit);
+        const float falloff=std::pow(weapon().range_modifier,nearest/falloff_distance);
+        const int damage=static_cast<int>(static_cast<float>(weapon().damage)*falloff*(headshot?4.0f:1.0f));
+        target->health=std::max(0,target->health-damage);
         if (!target->alive()) {
             ++kills;
             cash=std::min(16000,cash+300);
@@ -268,8 +326,9 @@ struct OfflineMatch {
         for (const auto& bot : bots) {
             if (!bot.alive()) continue;
             const Color body=attacking()?Color{64,120,185,255}:Color{176,116,62,255};
-            DrawCube(Vector3Add(bot.feet,{0,0.66f,0}),0.56f,1.32f,0.56f,body);
-            DrawSphere(Vector3Add(bot.feet,{0,1.48f,0}),0.17f,body);
+            DrawCube(Vector3Add(bot.feet,{0,Opponent::body_height/2,0}),2*Opponent::half_width,
+                     Opponent::body_height,2*Opponent::half_width,body);
+            DrawSphere(bot.head(),Opponent::head_radius,body);
         }
     }
 };
