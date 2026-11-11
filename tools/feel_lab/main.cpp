@@ -6,6 +6,7 @@
 #include "match_hud.hpp"
 #include "imported_map.hpp"
 #include "sound_cues.hpp"
+#include "yard_art.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -150,7 +151,7 @@ int run_lab(int argc, char* argv[]) {
     }
     std::filesystem::path map_path;
     std::filesystem::path capture_path;
-    bool validate = false, overview = false, range = false;
+    bool validate = false, overview = false, range = false, yard_art_enabled = true;
     for (int index = 1; index < argc; ++index) {
         const std::string_view option(argv[index]);
         if ((option == "--map" || option == "--capture") && index+1 < argc) {
@@ -161,8 +162,9 @@ int run_lab(int argc, char* argv[]) {
             validate=true;
         } else if (option == "--overview") overview=true;
         else if (option == "--range") range=true;
+        else if (option == "--greybox") yard_art_enabled=false;
         else if (option == "--validate-yard") validate=true;
-        else throw std::runtime_error("Usage: feel_lab [--map FILE | --range] [--capture PNG] [--overview] | --validate-map FILE | --validate-yard | --record-drills [CSV]");
+        else throw std::runtime_error("Usage: feel_lab [--map FILE | --range] [--capture PNG] [--overview] [--greybox] | --validate-map FILE | --validate-yard | --record-drills [CSV]");
     }
     feel_lab::ImportedMap map;
     if (map_path.empty() && !range && !validate && !map.load_embedded(argv[0])) {
@@ -215,6 +217,9 @@ int run_lab(int argc, char* argv[]) {
     SetWindowMinSize(520,580);
     if (options.fullscreen && capture_path.empty()) options.apply_window();
     feel_lab::ui::load();
+    feel_lab::freight_yard::Art yard_art;
+    if (map.original) yard_art.load();
+    double art_notice_until=0;
     using Audio = feel_lab::SoundCues;
     Audio sounds;
     if (capture_path.empty()) sounds.load();
@@ -312,6 +317,11 @@ int run_lab(int argc, char* argv[]) {
         }
         if (settings.visible && was_settings && !IsKeyPressed(KEY_ESCAPE)) settings.update();
         const bool accepting_input = !settings.visible && !was_settings && !frontend.menu();
+        if (map.original && !settings.visible && !was_settings && IsKeyPressed(KEY_F6) &&
+            std::find(settings.keys.begin(),settings.keys.end(),KEY_F6)==settings.keys.end()) {
+            yard_art_enabled=!yard_art_enabled;
+            art_notice_until=GetTime()+1.8;
+        }
         if (accepting_input && settings.pressed(feel_lab::Settings::Reset)) start_round();
         const bool offline=frontend.selected==GameMode::OfflineMatch;
         if (accepting_input && offline) {
@@ -540,9 +550,10 @@ int run_lab(int argc, char* argv[]) {
         }
         if (scale_scene) BeginTextureMode(render_target);
         else BeginDrawing();
-        ClearBackground({155,185,204,255});
+        ClearBackground(map.original && yard_art_enabled ? Color{163,187,198,255} : Color{155,185,204,255});
         BeginMode3D(camera);
-        if (map.original) feel_lab::freight_yard::draw();
+        if (map.original && yard_art_enabled) yard_art.draw();
+        else if (map.original) feel_lab::freight_yard::draw();
         else if (map.loaded()) map.draw();
         else {
             DrawPlane({0,-0.01f,0},{30,30},{155,157,151,255});
@@ -690,6 +701,12 @@ int run_lab(int argc, char* argv[]) {
             offline && !match.finished() ? "Next round" : offline ? "New match" : "Play again",
             offline ? score_text.c_str() : "",map_name,offline && match.finished());
         if (settings.visible) settings.draw(was_settings && !was_rebinding);
+        if (!settings.visible && art_notice_until>GetTime()) {
+            const char* view=yard_art_enabled?"Freight Yard art pass":"Freight Yard greybox";
+            const int width=feel_lab::ui::label_width(view,17)+24;
+            feel_lab::ui::surface(screen_width-width-14,screen_height-115,width,32);
+            feel_lab::ui::label(view,screen_width-width-2,screen_height-108,17);
+        }
         EndDrawing();
         if (action==Frontend::Action::Exit) break;
         if (action==Frontend::Action::Start) start_round();
@@ -709,6 +726,7 @@ int run_lab(int argc, char* argv[]) {
             if (!saved) {
                 if (render_target.id!=0) UnloadRenderTexture(render_target);
                 map.unload();
+                yard_art.unload();
                 feel_lab::ui::unload();
                 CloseWindow();
                 return 1;
@@ -718,6 +736,7 @@ int run_lab(int argc, char* argv[]) {
     }
     if (render_target.id!=0) UnloadRenderTexture(render_target);
     map.unload();
+    yard_art.unload();
     feel_lab::ui::unload();
     CloseWindow();
     return 0;
