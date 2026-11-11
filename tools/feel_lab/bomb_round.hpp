@@ -5,6 +5,7 @@
 namespace feel_lab {
 
 enum class GameMode { Practice, Plant, Defuse, OfflineMatch };
+enum class MatchLength { Short, Classic };
 
 struct BombRound {
     enum class Phase { Live, Planted, Detonated, Defused, Expired };

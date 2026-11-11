@@ -1,4 +1,6 @@
 #include "map_collision.hpp"
+#include "freight_yard.hpp"
+#include "utility.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -34,6 +36,18 @@ int main() {
     const auto air=collision.move({0.5f,0.001f,0},{1,0,0},{0.4f,0,0},1.67f,false);
     if (air.position.x>1-MapCollision::radius || air.position.y>0.01f) {
         std::cerr<<"Airborne movement should not receive a step boost\n";
+        return EXIT_FAILURE;
+    }
+    ImportedMap yard;
+    freight_yard::load(yard);
+    Grenade smoke;
+    smoke.launch({{0,1.5f,0},{0,0,-1}});
+    bool detonated=false;
+    for (int tick=0; tick<192; ++tick)
+        detonated=smoke.step(yard.collision,1.0/128.0) || detonated;
+    if (!detonated || smoke.position.z<-4 || Utility::flash_visible(yard.collision,{0,1,-6},{0,1,0}) ||
+        !Utility::flash_visible(yard.collision,{0,1,2},{0,1,0})) {
+        std::cerr<<"Freight Yard walls should bounce grenades and block flashes\n";
         return EXIT_FAILURE;
     }
     std::cout<<"Map collision tests passed\n";

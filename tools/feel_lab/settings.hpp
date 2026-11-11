@@ -26,7 +26,7 @@ struct Settings {
     Preferences preferences;
     int rebinding = -1;
     bool visible = false;
-    enum class Category { Display, Advanced, Hud, Crosshair, Mouse, Bindings };
+    enum class Category { Display, Advanced, Audio, Hud, Crosshair, Mouse, Bindings };
     Category category = Category::Display;
 
     void load() {
@@ -61,15 +61,15 @@ struct Settings {
         sensitivity = value;
         keys = saved;
         std::string version;
-        if (file >> version && (version=="preferences-v1" || version=="preferences-v2"))
-            preferences.read(file,version=="preferences-v2");
+        if (file >> version && (version=="preferences-v1" || version=="preferences-v2" || version=="preferences-v3"))
+            preferences.read(file,version!="preferences-v1",version=="preferences-v3");
     }
 
     void save() const {
         std::ofstream file("feel-lab-settings.txt");
         file << sensitivity;
         for (const auto key : keys) file << ' ' << key;
-        file << '\n' << "preferences-v2 ";
+        file << '\n' << "preferences-v3 ";
         preferences.write(file);
     }
 
@@ -152,7 +152,7 @@ struct Settings {
     void draw(bool interactive) {
         const int width=GetScreenWidth();
         const int height=GetScreenHeight();
-        DrawRectangle(0,0,width,height,{9,15,21,242});
+        DrawRectangle(0,0,width,height,{12,20,23,222});
         ui::bar();
         ui::label("SETTINGS",169,21,21,ui::accent);
         if (ui::button(width-105,13,89,38,"Close") && interactive) {
@@ -171,7 +171,7 @@ struct Settings {
 
         const int panel_width=std::min(width-36,930);
         const int left=(width-panel_width)/2;
-        constexpr int tab_count=6;
+        constexpr int tab_count=7;
         const int tab_width=(panel_width-5*5)/tab_count;
         const auto tab = [&](int column, Category item, const char* label) {
             if (ui::button(left+column*(tab_width+5),88,tab_width,40,label,category==item) && interactive) {
@@ -181,11 +181,12 @@ struct Settings {
         };
         tab(0,Category::Display,"Video");
         tab(1,Category::Advanced,"Quality");
-        tab(2,Category::Hud,"HUD");
-        tab(3,Category::Crosshair,"Reticle");
-        tab(4,Category::Mouse,"Mouse");
-        tab(5,Category::Bindings,"Keys");
-        DrawRectangle(left,146,panel_width,height-164,ui::panel);
+        tab(2,Category::Audio,"Audio");
+        tab(3,Category::Hud,"HUD");
+        tab(4,Category::Crosshair,"Reticle");
+        tab(5,Category::Mouse,"Mouse");
+        tab(6,Category::Bindings,"Keys");
+        ui::surface(left,146,panel_width,height-164);
 
         const int right=left+panel_width;
         const auto button_row=[&](int y,const char* title,const char* value) {
@@ -252,6 +253,8 @@ struct Settings {
             toggle(199,"4x MSAA at native size (restart)",preferences.msaa);
             adjust(238,"Maximum FPS in game",preferences.match_fps,30,500);
             adjust(277,"Maximum FPS in menus",preferences.menu_fps,30,500);
+        } else if (category==Category::Audio) {
+            adjust(160,"Effects volume",preferences.effects_volume,0,100,"%");
         } else if (category==Category::Hud) {
             toggle(160,"Show FPS",preferences.show_fps);
             toggle(199,"Show movement stats",preferences.movement_stats);

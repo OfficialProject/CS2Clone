@@ -1,6 +1,6 @@
 # CS2Clone
 
-A purpose-built competitive 5v5 FPS engine project. The long-term goal is a mechanically precise, server-authoritative tactical shooter; the current repository is an early engineering prototype, not a playable game.
+A competitive FPS prototype. The current Windows build has a playable local defusal match and practice modes. Server-authoritative 5v5 multiplayer is a future milestone.
 
 ## Current state
 
@@ -42,7 +42,7 @@ See the docs directory for the architecture baseline and movement experiment not
 
 ## Interactive movement playtest (Windows)
 
-The optional **Movement Feel Lab** is an early first-person, mouse-and-keyboard test scene. It uses the repository's C++ fixed-step movement simulation at 128 Hz, with a simple 3D environment, basic wall blocking, five shootable targets, speed readout, and reset. This is **not yet** a networked game or authoritative Jolt collision integration; hits are currently visual target checks without weapon accuracy/recoil modeling. Collision is a deliberately simplified flat-wall prototype.
+The optional Windows build opens **Freight Yard**, an original two-site map with an offline match against two bots, target practice, and plant and defuse drills. Choose a short match or a classic 30-round regulation match in Play. The build uses the C++ fixed-step movement simulation at 128 Hz. It includes swept world collision, weapon spread and recoil, round economy, and buyable smoke and flash grenades. Use **4** to throw a purchased smoke and **5** to throw a purchased flash. Run with `--range` to open the flat movement range or `--validate-yard` to check the built-in map without opening a window.
 
 To download: open [Playtest build Actions](https://github.com/OfficialProject/CS2Clone/actions/workflows/playtest.yml), select a successful run, and download the **CS2Clone-Feel-Lab-Windows** artifact. Unzip both layers if necessary and run `feel_lab.exe`. GitHub may require sign-in to download artifacts.
 

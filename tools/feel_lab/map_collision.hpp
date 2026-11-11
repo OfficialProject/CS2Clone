@@ -120,18 +120,18 @@ public:
         }
     }
 
-    Sweep sweep(Vector3 feet, Vector3 delta, float height) const {
+    Sweep sweep(Vector3 feet, Vector3 delta, float height, float half_width=radius) const {
         const auto end = Vector3Add(feet, delta);
         std::vector<std::uint32_t> candidates;
-        for (int x=cell(std::min(feet.x,end.x)-radius); x<=cell(std::max(feet.x,end.x)+radius); ++x) {
-            for (int z=cell(std::min(feet.z,end.z)-radius); z<=cell(std::max(feet.z,end.z)+radius); ++z) {
+        for (int x=cell(std::min(feet.x,end.x)-half_width); x<=cell(std::max(feet.x,end.x)+half_width); ++x) {
+            for (int z=cell(std::min(feet.z,end.z)-half_width); z<=cell(std::max(feet.z,end.z)+half_width); ++z) {
                 const auto found = cells.find(key(x,z));
                 if (found != cells.end()) candidates.insert(candidates.end(), found->second.begin(), found->second.end());
             }
         }
         std::sort(candidates.begin(), candidates.end());
         candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
-        const Vector3 half{radius, height/2, radius};
+        const Vector3 half{half_width, height/2, half_width};
         const auto center = Vector3Add(feet, {0,height/2,0});
         Sweep hit;
         for (const auto index : candidates) triangle_sweep(center, half, delta, triangles[index], hit);

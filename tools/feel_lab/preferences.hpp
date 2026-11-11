@@ -28,13 +28,14 @@ struct Preferences {
     int window_size=1;
     bool fullscreen=false, vsync=false, msaa=true;
     int brightness=100, match_fps=240, menu_fps=120;
+    int effects_volume=65;
     bool show_fps=true, movement_stats=true, hit_feedback=true, invert_mouse=false;
     int hud_margin=12;
     int cross_length=7, cross_gap=4, cross_thickness=1, cross_alpha=255;
     int red=255, green=255, blue=255;
     bool cross_dot=false, cross_outline=false;
 
-    void read(std::istream& file, bool render_preferences) {
+    void read(std::istream& file, bool render_preferences, bool audio_preferences=false) {
         int legacy_fov=0;
         Preferences value;
         if (!(file >> value.window_size >> value.fullscreen >> value.vsync >> value.msaa
@@ -44,13 +45,14 @@ struct Preferences {
                    >> value.cross_alpha >> value.red >> value.green >> value.blue
                    >> value.cross_dot >> value.cross_outline)) return;
         if (render_preferences && !(file >> value.aspect >> value.resolution)) return;
+        if (audio_preferences && !(file >> value.effects_volume)) return;
         const auto valid=[](int n,int min,int max){return n>=min && n<=max;};
         if (!valid(value.window_size,0,static_cast<int>(sizes.size())-1) ||
             !valid(value.brightness,60,140) || !valid(value.match_fps,30,500) ||
             !valid(value.menu_fps,30,500) || !valid(value.aspect,0,2) || !valid(value.resolution,0,7) ||
             !valid(value.hud_margin,0,40) || !valid(value.cross_length,1,20) ||
             !valid(value.cross_gap,0,16) || !valid(value.cross_thickness,1,6) ||
-            !valid(value.cross_alpha,0,255) || !valid(value.red,0,255) ||
+            !valid(value.cross_alpha,0,255) || !valid(value.effects_volume,0,100) || !valid(value.red,0,255) ||
             !valid(value.green,0,255) || !valid(value.blue,0,255)) return;
         *this=value;
     }
@@ -61,7 +63,7 @@ struct Preferences {
              << show_fps << ' ' << movement_stats << ' ' << hit_feedback << ' ' << invert_mouse << ' '
              << hud_margin << ' ' << cross_length << ' ' << cross_gap << ' ' << cross_thickness << ' '
              << cross_alpha << ' ' << red << ' ' << green << ' ' << blue << ' '
-             << cross_dot << ' ' << cross_outline << ' ' << aspect << ' ' << resolution << '\n';
+             << cross_dot << ' ' << cross_outline << ' ' << aspect << ' ' << resolution << ' ' << effects_volume << '\n';
     }
 
     void apply_window() const {

@@ -11,6 +11,7 @@ struct Frontend {
     enum class RoundCommand { Continue, Restart, Settings, Lobby };
     Screen screen = Screen::Home;
     GameMode selected = GameMode::Practice;
+    MatchLength match_length = MatchLength::Short;
 
     enum class Action { None, Start, Resume, Exit };
 
@@ -36,13 +37,15 @@ struct Frontend {
         return "";
     }
 
-    Action draw(Settings& settings, bool mirage, bool won, const char* result, const char* next_label="Play again", const char* score="") {
+    Action draw(Settings& settings, bool defusal, bool won, const char* result,
+                const char* next_label="Play again", const char* score="", const char* map_name="Mirage",
+                bool final_score=false) {
         if (!menu() || settings.visible) return Action::None;
         const int width=GetScreenWidth();
         const int height=GetScreenHeight();
         const auto current=screen;
         const bool selection=current==Screen::Lobby;
-        if (!selection) DrawRectangle(0,64,width,height-64,{8,13,18,95});
+        if (!selection) DrawRectangle(0,64,width,height-64,{9,16,19,98});
         ui::bar();
         if (current==Screen::Home || current==Screen::Lobby) {
             if (ui::button(168,13,82,38,"Home",current==Screen::Home)) screen=Screen::Home;
@@ -52,60 +55,61 @@ struct Frontend {
         }
 
         if (current==Screen::Home) {
-            const int left=std::max(24,width/18);
-            const int top=height/2-98;
-            DrawRectangleGradientH(0,64,width,height-64,{6,11,16,230},{6,11,16,10});
-            ui::label("CS2CLONE",left,top,64);
-            ui::label("Mirage practice",left,top+83,25,ui::muted);
-            if (ui::button(left,top+138,180,46,"Open lobby",false,true)) screen=Screen::Lobby;
+            const int left=std::clamp(width/13,36,110);
+            const int top=height/2-70;
+            DrawRectangleGradientH(0,64,width,height-64,{8,14,17,250},{8,14,17,0});
+            DrawRectangleGradientV(0,height-155,width,155,{8,14,17,0},{8,14,17,220});
+            DrawRectangle(left,top,43,3,ui::accent);
+            ui::heading(map_name,left,top+20,std::clamp(width/16,34,74));
+            ui::label(defusal?"Bomb defusal and target practice":"Target practice",left,top+105,21,ui::muted);
+            if (ui::button(left,top+153,196,46,"Play",false,true)) screen=Screen::Lobby;
         } else if (selection) {
-            const int margin=std::clamp(width/22,18,64);
-            const int content=width-2*margin;
-            const int map_width=content*58/100;
-            const int details_x=margin+map_width+14;
-            const int details_width=width-margin-details_x;
-            const int card_top=202;
-            const int card_height=height-card_top-92;
-            constexpr Color backdrop{8,13,18,210};
-            DrawRectangle(0,64,width,card_top-64,backdrop);
-            DrawRectangle(0,card_top,margin,card_height,backdrop);
-            DrawRectangle(margin+map_width,card_top,width-margin-map_width,card_height,backdrop);
-            DrawRectangle(0,card_top+card_height,width,height-card_top-card_height,backdrop);
-            ui::label("LOCAL LOBBY",margin,82,29);
-            const int tab_width=(content-24)/4;
+            const int margin=std::clamp(width/25,18,60);
+            const int rail=std::clamp(width/4,166,300);
+            const int card_x=margin+rail+14;
+            const int card_width=width-margin-card_x;
+            const int card_top=142;
+            const int card_bottom=height-96;
+            DrawRectangle(0,64,width,height-64,{9,16,19,145});
+            DrawRectangleGradientH(0,64,width,height-64,{9,16,19,135},{9,16,19,0});
+            ui::heading("PLAY",margin,82,34);
+            ui::surface(margin,card_top,rail,card_bottom-card_top,{22,28,30,244});
+            ui::label("LOCAL MODES",margin+14,card_top+13,16,ui::muted);
             using ModeButton = ui::MenuButton<GameMode>;
             const std::array mode_buttons{
-                ModeButton{"Targets", GameMode::Practice, selected==GameMode::Practice},
-                ModeButton{"Plant", GameMode::Plant, selected==GameMode::Plant, false, mirage},
-                ModeButton{"Defuse", GameMode::Defuse, selected==GameMode::Defuse, false, mirage},
-                ModeButton{"Offline Match", GameMode::OfflineMatch, selected==GameMode::OfflineMatch, false, mirage}
+                ModeButton{"Target practice", GameMode::Practice, selected==GameMode::Practice},
+                ModeButton{"Offline match", GameMode::OfflineMatch, selected==GameMode::OfflineMatch, false, defusal},
+                ModeButton{"Plant drill", GameMode::Plant, selected==GameMode::Plant, false, defusal},
+                ModeButton{"Defuse drill", GameMode::Defuse, selected==GameMode::Defuse, false, defusal}
             };
-            if (const auto mode = ui::menu_buttons({margin,132,tab_width,40,tab_width+8,0}, mode_buttons))
+            if (const auto mode = ui::menu_buttons({margin+12,card_top+45,rail-24,47,0,54}, mode_buttons))
                 selected = *mode;
+            if (selected==GameMode::OfflineMatch &&
+                ui::button(margin+12,card_bottom-55,rail-24,42,
+                           match_length==MatchLength::Short?"Short / 6 rounds":"Classic / 30 rounds")) {
+                match_length=match_length==MatchLength::Short?MatchLength::Classic:MatchLength::Short;
+            }
 
-            DrawRectangle(margin,card_top,map_width,card_height,{15,25,33,70});
-            DrawRectangleGradientV(margin,card_top+card_height-102,map_width,102,{10,17,24,25},{10,17,24,245});
-            DrawRectangleLinesEx({static_cast<float>(margin),static_cast<float>(card_top),
-                                  static_cast<float>(map_width),static_cast<float>(card_height)},2,ui::accent);
-            ui::label(mirage?"MIRAGE":"TARGET RANGE",margin+18,card_top+card_height-57,34);
-
-            DrawRectangle(details_x,card_top,details_width,card_height,ui::panel);
-            ui::label("SESSION",details_x+16,card_top+20,15,ui::muted);
-            ui::label(selected==GameMode::OfflineMatch?"Local / 1 player / 2 bots":"Local / 1 player",details_x+16,card_top+49,19);
-            DrawRectangle(details_x+16,card_top+87,details_width-32,1,ui::line);
-            ui::label(mode_name(),details_x+16,card_top+106,22);
-            if (details_width>=340) ui::label(mode_description(),details_x+16,card_top+147,16,ui::muted);
-            DrawRectangle(0,height-72,width,72,{17,23,29,255});
-            ui::label(mirage?"Mirage":"Target Range",margin,height-49,19,ui::muted);
-            if (ui::button(width-margin-146,height-58,146,44,"GO",false,true)) return Action::Start;
+            ui::surface(card_x,card_top,card_width,card_bottom-card_top,{13,21,24,16});
+            DrawRectangleGradientV(card_x,card_bottom-155,card_width,155,{13,21,24,0},{13,21,24,255});
+            DrawRectangle(card_x,card_bottom-2,card_width,2,ui::accent);
+            ui::heading(map_name,card_x+18,card_bottom-116,std::clamp(card_width/11,24,42));
+            ui::label(mode_name(),card_x+18,card_bottom-66,19);
+            int description_size=16;
+            while (description_size>12 && ui::label_width(mode_description(),description_size)>card_width-36)
+                --description_size;
+            ui::label(mode_description(),card_x+18,card_bottom-36,description_size,ui::muted);
+            ui::surface(0,height-76,width,76,{20,26,29,248});
+            ui::label(selected==GameMode::OfflineMatch?"1 player / 2 bots":"1 player",margin,height-48,17,ui::muted);
+            if (ui::button(width-margin-170,height-61,170,46,"Start session",false,true)) return Action::Start;
         } else {
             const int left=(width-428)/2;
             const int top=(height-340)/2;
-            DrawRectangle(left,top,428,340,ui::panel);
+            ui::surface(left,top,428,340);
             DrawRectangle(left,top,428,2,ui::accent);
             const bool paused=current==Screen::Pause;
-            ui::label(paused?"PAUSED":won?"ROUND WON":"ROUND LOST",left+24,top+25,34,
-                      paused?ui::text:won?ui::accent:ORANGE);
+            const char* title=paused?"PAUSED":final_score?"MATCH RESULT":won?"ROUND WON":"ROUND LOST";
+            ui::label(title,left+24,top+25,34,paused||final_score?ui::text:won?ui::accent:ORANGE);
             ui::label(paused?mode_name():result,left+24,top+77,18,ui::muted);
             if (!paused) ui::label(score,left+24,top+105,17,ui::accent);
             using RoundButton = ui::MenuButton<RoundCommand>;

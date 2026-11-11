@@ -21,6 +21,16 @@ public:
     Vector3 spawn{};
     float spawn_yaw = 0;
     float lowest = 0;
+    bool original = false;
+
+    void load_original(Vector3 start, std::vector<Triangle> geometry) {
+        original=true;
+        spawn=start;
+        lowest=start.y;
+        for (const auto& triangle : geometry)
+            lowest=std::min({lowest,triangle.a.y,triangle.b.y,triangle.c.y});
+        collision.build(std::move(geometry));
+    }
 
     bool load_embedded(const std::filesystem::path& executable) {
         std::ifstream file(executable, std::ios::binary | std::ios::ate);
@@ -89,7 +99,7 @@ private:
     }
 
 public:
-    bool loaded() const { return uploaded || !visual.empty(); }
+    bool loaded() const { return original || uploaded || !visual.empty(); }
 
     game::simulation::MovementState spawn_player() const { return spawn_player(spawn); }
 
